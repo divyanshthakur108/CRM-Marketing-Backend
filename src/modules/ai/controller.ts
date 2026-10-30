@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { aiModuleService } from './service.js';
 import { creativeService } from './creativeService.js';
 import { creativeEngineService } from './creativeEngineService.js';
@@ -124,7 +125,7 @@ export class AiController {
     if (!organizationId) throw AppError.unauthorized('Organization required');
 
     const { projectId, planItemId, status, approvalStatus } = req.query;
-    const filter: Record<string, unknown> = { organizationId };
+    const filter: Record<string, unknown> = req.user?.isPlatformAdmin && !projectId ? {} : { organizationId };
 
     if (projectId) filter.projectId = projectId;
     if (planItemId) filter.planItemId = planItemId;
@@ -799,7 +800,11 @@ export class AiController {
     if (!organizationId) throw AppError.unauthorized('Organization required');
 
     const { projectId } = req.params;
-    const batches = await aiStudioService.getBatches(organizationId, projectId);
+    if (!projectId || !Types.ObjectId.isValid(projectId) || projectId.length !== 24) {
+      sendSuccess(res, []);
+      return;
+    }
+    const batches = await aiStudioService.getBatches(organizationId, projectId, req.user?.isPlatformAdmin);
     sendSuccess(res, batches);
   };
 
@@ -811,7 +816,10 @@ export class AiController {
     if (!organizationId) throw AppError.unauthorized('Organization required');
 
     const { batchId } = req.params;
-    const batch = await aiStudioService.getBatchById(organizationId, batchId);
+    if (!batchId || !Types.ObjectId.isValid(batchId) || batchId.length !== 24) {
+      throw AppError.notFound('Studio batch not found');
+    }
+    const batch = await aiStudioService.getBatchById(organizationId, batchId, req.user?.isPlatformAdmin);
     sendSuccess(res, batch);
   };
 

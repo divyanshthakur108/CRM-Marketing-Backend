@@ -1390,12 +1390,20 @@ export class AiStudioService {
    */
   public async getBatches(
     orgId: Types.ObjectId | string,
-    projId: Types.ObjectId | string
+    projId: Types.ObjectId | string,
+    isPlatformAdmin?: boolean
   ): Promise<IAiStudioBatch[]> {
+    if (!projId || !Types.ObjectId.isValid(String(projId)) || String(projId).length !== 24) {
+      return [];
+    }
     const organizationId = this.toObjectId(orgId);
     const projectId = this.toObjectId(projId);
 
-    return AiStudioBatch.find({ organizationId, projectId }).sort({ version: -1 });
+    const filter: Record<string, unknown> = isPlatformAdmin
+      ? { projectId }
+      : { organizationId, projectId };
+
+    return AiStudioBatch.find(filter).sort({ version: -1 });
   }
 
   /**
@@ -1403,10 +1411,17 @@ export class AiStudioService {
    */
   public async getBatchById(
     orgId: Types.ObjectId | string,
-    batchId: Types.ObjectId | string
+    batchId: Types.ObjectId | string,
+    isPlatformAdmin?: boolean
   ): Promise<IAiStudioBatch> {
+    if (!batchId || !Types.ObjectId.isValid(String(batchId)) || String(batchId).length !== 24) {
+      throw AppError.notFound('Studio batch not found');
+    }
     const organizationId = this.toObjectId(orgId);
-    const batch = await AiStudioBatch.findOne({ _id: this.toObjectId(batchId), organizationId });
+    let batch = await AiStudioBatch.findOne({ _id: this.toObjectId(batchId), organizationId });
+    if (!batch && isPlatformAdmin) {
+      batch = await AiStudioBatch.findById(this.toObjectId(batchId));
+    }
     if (!batch) {
       throw AppError.notFound('Studio batch not found');
     }

@@ -15,13 +15,17 @@ class ProjectController {
     }
 
     const { category, status, search, page, limit } = req.query;
-    const projects = await projectService.listProjects(req.membership.organizationId, {
-      category: category as string,
-      status: status as string,
-      search: search as string,
-      page: page ? Number(page) : undefined,
-      limit: limit ? Number(limit) : undefined,
-    });
+    const projects = await projectService.listProjects(
+      req.membership.organizationId,
+      {
+        category: category as string,
+        status: status as string,
+        search: search as string,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      },
+      req.user?.isPlatformAdmin
+    );
 
     res.status(200).json({
       success: true,

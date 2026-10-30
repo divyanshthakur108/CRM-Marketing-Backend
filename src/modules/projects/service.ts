@@ -64,9 +64,13 @@ class ProjectService {
     return slug;
   }
 
-  public async listProjects(orgId: Types.ObjectId | string, query: ProjectListQuery = {}) {
+  public async listProjects(
+    orgId: Types.ObjectId | string,
+    query: ProjectListQuery = {},
+    isPlatformAdmin?: boolean
+  ) {
     const organizationId = this.toObjectId(orgId);
-    const filter: Record<string, unknown> = { organizationId };
+    const filter: Record<string, unknown> = isPlatformAdmin ? {} : { organizationId };
 
     if (query.category) {
       filter.category = query.category.toUpperCase();
