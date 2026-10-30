@@ -74,7 +74,7 @@ export const resolveTenant = async (
       }
 
       // 2b. If accessing a specific project, automatically adopt that project's organization
-      const urlProjectMatch = req.originalUrl?.match(/\/projects\/([0-9a-fA-F]{24})/);
+      const urlProjectMatch = req.originalUrl?.match(/\/projects\/([0-9a-fA-F]{24})/i);
       const candidateProjectId =
         (isValidObjectId(req.params?.id) ? req.params.id : undefined) ||
         (isValidObjectId(req.params?.projectId) ? req.params.projectId : undefined) ||
@@ -102,23 +102,25 @@ export const resolveTenant = async (
       }
 
       // 2c. Check if admin has an existing active organization membership
-      const adminMembership = await Membership.findOne({
-        userId: req.user.userId,
-        status: 'ACTIVE',
-      }).sort({ createdAt: 1 });
+      if (isValidObjectId(req.user.userId)) {
+        const adminMembership = await Membership.findOne({
+          userId: req.user.userId,
+          status: 'ACTIVE',
+        }).sort({ createdAt: 1 });
 
-      if (adminMembership && isValidObjectId(adminMembership.organizationId?.toString())) {
-        const org = await Organization.findById(adminMembership.organizationId);
-        if (org) {
-          const orgIdStr = org._id.toString();
-          req.organizationId = orgIdStr;
-          req.membership = {
-            organizationId: orgIdStr,
-            userId: req.user.userId,
-            role: 'platform_admin',
-            status: 'ACTIVE',
-          };
-          return next();
+        if (adminMembership && isValidObjectId(adminMembership.organizationId?.toString())) {
+          const org = await Organization.findById(adminMembership.organizationId);
+          if (org) {
+            const orgIdStr = org._id.toString();
+            req.organizationId = orgIdStr;
+            req.membership = {
+              organizationId: orgIdStr,
+              userId: req.user.userId,
+              role: 'platform_admin',
+              status: 'ACTIVE',
+            };
+            return next();
+          }
         }
       }
 

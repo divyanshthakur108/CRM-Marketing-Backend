@@ -42,7 +42,40 @@ export const errorHandler: ErrorRequestHandler = (
       message: issue.message,
     }));
   }
-  // 3. Malformed JSON Body
+  // 3. Mongoose Validation Error
+  else if (err.name === 'ValidationError' || (err as unknown as Record<string, unknown>).name === 'ValidationError') {
+    statusCode = 400;
+    code = 'VALIDATION_ERROR';
+    message = err.message || 'Database validation failed';
+    const mongooseErrors = (err as unknown as { errors?: Record<string, { message?: string }> }).errors;
+    if (mongooseErrors && typeof mongooseErrors === 'object') {
+      details = Object.keys(mongooseErrors).map((key) => ({
+        field: key,
+        message: mongooseErrors[key]?.message || 'Invalid value',
+      }));
+    }
+  }
+  // 4. Mongoose Cast Error / BSON Error (Invalid ObjectId)
+  else if (
+    err.name === 'CastError' ||
+    (err as unknown as Record<string, unknown>).name === 'CastError' ||
+    err.name === 'BSONError' ||
+    (err as unknown as Record<string, unknown>).name === 'BSONError'
+  ) {
+    statusCode = 400;
+    code = 'INVALID_IDENTIFIER';
+    const castErr = err as unknown as { path?: string; value?: unknown };
+    message = `Invalid format for ${castErr.path || 'identifier'}: ${castErr.value || 'invalid parameter'}`;
+  }
+  // 5. MongoDB Duplicate Key (E11000)
+  else if ((err as unknown as { code?: number }).code === 11000) {
+    statusCode = 409;
+    code = 'DUPLICATE_RESOURCE';
+    const keyValue = (err as unknown as { keyValue?: Record<string, unknown> }).keyValue;
+    const fields = keyValue ? Object.keys(keyValue).join(', ') : 'field';
+    message = `A resource with this ${fields} already exists`;
+  }
+  // 6. Malformed JSON Body
   else if (err instanceof SyntaxError && 'status' in err && (err as { status: number }).status === 400) {
     statusCode = 400;
     code = 'INVALID_JSON';

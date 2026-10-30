@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { Project, IProject } from '../../models/Project.js';
+import { Organization } from '../../models/Organization.js';
 import { PropertyUnit, IPropertyUnit, IUnitChangeHistory } from '../../models/PropertyUnit.js';
 import { MediaAsset } from '../../models/MediaAsset.js';
 import { AuditLog } from '../../models/AuditLog.js';
@@ -30,7 +31,11 @@ export interface UnitListQuery {
 
 class ProjectService {
   private toObjectId(id: Types.ObjectId | string): Types.ObjectId {
-    return typeof id === 'string' ? new Types.ObjectId(id) : id;
+    if (id instanceof Types.ObjectId) return id;
+    if (typeof id === 'string' && Types.ObjectId.isValid(id) && id.length === 24) {
+      return new Types.ObjectId(id);
+    }
+    throw AppError.badRequest(`Invalid identifier: '${id}'`);
   }
 
   private generateSlug(name: string): string {
@@ -119,19 +124,23 @@ class ProjectService {
     projectId: string,
     isPlatformAdmin?: boolean
   ): Promise<IProject> {
-    const organizationId = this.toObjectId(orgId);
-    if (!Types.ObjectId.isValid(projectId)) {
+    if (!projectId || !Types.ObjectId.isValid(projectId)) {
       throw AppError.notFound('Project not found');
     }
 
-    let project = await Project.findOne({
+    // Platform admin can query any project directly by ID
+    if (isPlatformAdmin) {
+      const adminProject = await Project.findById(projectId);
+      if (adminProject) {
+        return adminProject;
+      }
+    }
+
+    const organizationId = this.toObjectId(orgId);
+    const project = await Project.findOne({
       _id: projectId,
       organizationId,
     });
-
-    if (!project && isPlatformAdmin) {
-      project = await Project.findById(projectId);
-    }
 
     if (!project) {
       throw AppError.notFound('Project not found or belongs to another organization');
@@ -141,7 +150,21 @@ class ProjectService {
   }
 
   public async createProject(orgId: Types.ObjectId | string, input: CreateProjectInput): Promise<IProject> {
-    const organizationId = this.toObjectId(orgId);
+    let organizationId: Types.ObjectId;
+    if (orgId instanceof Types.ObjectId) {
+      organizationId = orgId;
+    } else if (typeof orgId === 'string' && Types.ObjectId.isValid(orgId) && orgId.length === 24) {
+      organizationId = new Types.ObjectId(orgId);
+    } else {
+      const fallbackOrg =
+        (await Organization.findOne({ status: 'ACTIVE' }).sort({ createdAt: 1 })) ||
+        (await Organization.findOne().sort({ createdAt: 1 }));
+      if (!fallbackOrg) {
+        throw AppError.badRequest('No valid organization found to create project under');
+      }
+      organizationId = fallbackOrg._id as Types.ObjectId;
+    }
+
     const slug = await this.getUniqueSlug(organizationId, input.name);
 
     const project = await Project.create({
@@ -159,13 +182,12 @@ class ProjectService {
     input: UpdateProjectInput,
     isPlatformAdmin?: boolean
   ): Promise<IProject> {
-    const organizationId = this.toObjectId(orgId);
-    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
+    const project = await this.getProjectById(orgId, projectId, isPlatformAdmin);
     const targetOrgId = project.organizationId as Types.ObjectId;
 
-    if (input.name && input.name !== project.name) {
-      project.slug = await this.getUniqueSlug(targetOrgId, input.name, project._id as Types.ObjectId);
-      project.name = input.name;
+    if (!project.slug || (input.name && input.name !== project.name)) {
+      project.slug = await this.getUniqueSlug(targetOrgId, input.name || project.name, project._id as Types.ObjectId);
+      if (input.name) project.name = input.name;
     }
 
     if (input.category) project.category = input.category;
@@ -177,30 +199,50 @@ class ProjectService {
 
     if (input.location) {
       project.location = {
-        ...project.location,
-        ...input.location,
+        address: input.location.address ?? project.location?.address ?? '',
+        city: input.location.city ?? project.location?.city ?? '',
+        microMarket: input.location.microMarket ?? project.location?.microMarket ?? '',
+        state: input.location.state ?? project.location?.state ?? '',
+        pincode: input.location.pincode ?? project.location?.pincode ?? '',
       };
     }
 
     if (input.priceRange) {
       project.priceRange = {
-        ...project.priceRange,
-        ...input.priceRange,
+        min: input.priceRange.min ?? project.priceRange?.min ?? 0,
+        max: input.priceRange.max ?? project.priceRange?.max ?? 0,
+        display: input.priceRange.display ?? project.priceRange?.display ?? 'Price on Request',
       };
     }
 
     if (input.amenities) project.amenities = input.amenities;
     if (input.details) {
       project.details = {
-        ...project.details,
+        ...(project.details || {}),
         ...input.details,
       };
+      project.markModified('details');
     }
 
     if (input.ownerContacts) project.ownerContacts = input.ownerContacts;
     if (input.privateDocuments) project.privateDocuments = input.privateDocuments;
 
-    await project.save();
+    try {
+      await project.save();
+    } catch (saveErr: unknown) {
+      const mongoErr = saveErr as { code?: number };
+      if (mongoErr?.code === 11000) {
+        // Regenerate unique slug and retry once
+        project.slug = await this.getUniqueSlug(
+          targetOrgId,
+          `${project.name}-${Date.now().toString().slice(-4)}`,
+          project._id as Types.ObjectId
+        );
+        await project.save();
+      } else {
+        throw saveErr;
+      }
+    }
 
     const hasSpecChanges = Boolean(
       input.priceRange || input.location || input.amenities || input.reraNumber || input.details
@@ -221,8 +263,7 @@ class ProjectService {
   }
 
   public async deleteProject(orgId: Types.ObjectId | string, projectId: string, isPlatformAdmin?: boolean): Promise<void> {
-    const organizationId = this.toObjectId(orgId);
-    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
+    const project = await this.getProjectById(orgId, projectId, isPlatformAdmin);
 
     // Delete all units belonging to the project
     await PropertyUnit.deleteMany({ organizationId: project.organizationId, projectId: project._id });
@@ -234,8 +275,7 @@ class ProjectService {
    * Strips ownerContacts, privateDocuments, and privateNotes
    */
   public async getPublicAdProject(orgId: Types.ObjectId | string, projectId: string, isPlatformAdmin?: boolean) {
-    const organizationId = this.toObjectId(orgId);
-    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
+    const project = await this.getProjectById(orgId, projectId, isPlatformAdmin);
     const obj = project.toObject() as Partial<IProject>;
 
     delete obj.ownerContacts;
@@ -437,8 +477,8 @@ class ProjectService {
     clientVersion?: number,
     isPlatformAdmin?: boolean
   ): Promise<{ project: IProject; isAlreadyReady: boolean }> {
-    const organizationId = this.toObjectId(orgId);
-    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
+    const project = await this.getProjectById(orgId, projectId, isPlatformAdmin);
+    const organizationId = project.organizationId as Types.ObjectId;
 
     // 1. Optimistic Concurrency Check (409 on stale version)
     if (clientVersion !== undefined && clientVersion !== null) {
@@ -633,13 +673,14 @@ class ProjectService {
     }
 
     // 4. Update the project in one operation
+    const userObjectId = userId && typeof userId === 'string' && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : undefined;
     const nextVersion = (project.version || 1) + 1;
     const historyEntry = {
       action: 'SUBMIT_READY',
       fromStatus: project.status,
       toStatus: 'ready',
       version: project.version,
-      changedBy: userId ? this.toObjectId(userId) : undefined,
+      changedBy: userObjectId,
       changedAt: new Date(),
       reason: 'Project specifications submitted and marked as ready',
       field: 'status',
@@ -653,7 +694,7 @@ class ProjectService {
         $set: {
           status: 'ready',
           submittedAt: new Date(),
-          submittedBy: userId ? this.toObjectId(userId) : undefined,
+          submittedBy: userObjectId,
           version: nextVersion,
         },
         $push: {
@@ -670,7 +711,7 @@ class ProjectService {
     // Write audit log
     await AuditLog.create({
       organizationId,
-      userId: userId ? this.toObjectId(userId) : undefined,
+      userId: userObjectId,
       action: 'PROJECT_SUBMITTED',
       resourceType: 'Project',
       resourceId: project._id.toString(),
