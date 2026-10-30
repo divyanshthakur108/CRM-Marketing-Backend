@@ -7,7 +7,10 @@ import {
   GeneratedImageResult,
   ImageToVideoOptions,
   GeneratedVideoResult,
+  ImageAnalysisOptions,
+  ImageAnalysisResult,
 } from './provider.interface.js';
+import { EnhancedLocalProvider } from './enhancedLocalProvider.js';
 import { env, maskSecret } from '../../../config/env.js';
 import { logger } from '../../../config/logger.js';
 import { defaultStorage } from '../../../storage/localStorage.adapter.js';
@@ -543,6 +546,64 @@ Output strict JSON with keys:
     const cleanPath = url.replace(/^[/\\]+/, '');
     const absPath = defaultStorage.getAbsolutePath(cleanPath);
     return fs.readFile(absPath);
+  }
+
+  /**
+   * AI Vision Analysis of Property Image using Gemini 2.5 Flash
+   * Analyzes room space, lighting, features, and layout
+   */
+  public async analyzeImage(options: ImageAnalysisOptions): Promise<ImageAnalysisResult> {
+    if (!this.isConfigured() || !this.client) {
+      const local = new EnhancedLocalProvider();
+      return local.analyzeImage(options);
+    }
+
+    try {
+      const mimeType = options.mimeType || 'image/jpeg';
+      const prompt = `Analyze this real estate property photograph carefully.
+Identify:
+1. Exact room/space category (choose strictly one from: "Grand Living Room", "Master Bedroom Suite", "Modular Island Kitchen", "Spa En-Suite Bathroom", "Panoramic Sky Balcony", "Ceiling & Architectural Lighting", "Exterior Facade & Arrival", "Formal Dining Foyer", "Resident Clubhouse & Amenities").
+2. 3 key architectural features detected (e.g. Italian marble, false ceiling with recessed LEDs, floor-to-ceiling glass sliding doors).
+3. Lighting profile (e.g. Sun-Drenched Natural Daylight, Warm Golden Hour Glow, Evening Recessed Cove Lights).
+4. Perspective / camera angle (e.g. Wide-Angle Architectural Perspective, Low-Angle Hero Framing).
+5. Whether it appears furnished (true/false).
+6. 2 dominant colors.
+
+Respond with strict JSON only with keys:
+{"category": "...", "detectedFeatures": ["...", "..."], "lighting": "...", "perspective": "...", "isFurnished": true, "dominantColors": ["...", "..."]}`;
+
+      const response = await this.client.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          prompt,
+          {
+            inlineData: {
+              mimeType,
+              data: options.imageBuffer.toString('base64'),
+            },
+          },
+        ],
+      });
+
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      return {
+        category: parsed.category || 'Grand Living Room',
+        detectedFeatures: Array.isArray(parsed.detectedFeatures) && parsed.detectedFeatures.length > 0
+          ? parsed.detectedFeatures
+          : ['Architectural proportions', 'Natural lighting', 'Premium floor finishes'],
+        lighting: parsed.lighting || 'Balanced Natural Daylight',
+        perspective: parsed.perspective || 'Wide-Angle 24mm Architectural Framing',
+        isFurnished: parsed.isFurnished ?? true,
+        dominantColors: Array.isArray(parsed.dominantColors) ? parsed.dominantColors : ['Warm Sand', 'Navy Blue'],
+      };
+    } catch (err) {
+      logger.warn({ err: this.sanitizeError(err) }, 'Gemini vision analysis failed; using local vision fallback');
+      const local = new EnhancedLocalProvider();
+      return local.analyzeImage(options);
+    }
   }
 
   /**

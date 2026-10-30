@@ -26,6 +26,23 @@ export interface GeneratedCaptionResult {
   model: string;
 }
 
+export interface ImageAnalysisOptions {
+  imageBuffer: Buffer;
+  mimeType?: string;
+  filename?: string;
+}
+
+export interface ImageAnalysisResult {
+  category: string;
+  detectedFeatures: string[];
+  lighting: string;
+  perspective: string;
+  architecturalStyle?: string;
+  isFurnished?: boolean;
+  dominantColors?: string[];
+  summary?: string;
+}
+
 export interface GenerateImageOptions {
   prompt: string;
   aspectRatio?: '1:1' | '4:5' | '9:16';
@@ -33,6 +50,11 @@ export interface GenerateImageOptions {
   style?: string;
   sourceImageUrl?: string;
   sourceImageBuffer?: Buffer;
+  mode?: 'TEXT_TO_IMAGE' | 'IMAGE_TO_IMAGE' | 'CONTROLNET_DEPTH' | 'VIRTUAL_STAGING' | 'DAY_TO_DUSK';
+  strength?: number;
+  guidanceScale?: number;
+  negativePrompt?: string;
+  preserveStructure?: boolean;
   branding?: {
     primaryColor?: string;
     logoUrl?: string;
@@ -45,6 +67,9 @@ export interface GeneratedImageResult {
   format: '1:1' | '4:5' | '9:16';
   model: string;
   isIllustrative?: boolean;
+  provider?: string;
+  isVirtuallyStaged?: boolean;
+  structurePreservationScore?: number;
 }
 
 export interface ImageToVideoOptions {
@@ -74,4 +99,6 @@ export interface IAIProvider {
   generateCaption(data: CaptionPromptData): Promise<GeneratedCaptionResult>;
   generateImage(options: GenerateImageOptions): Promise<GeneratedImageResult>;
   imageToVideo(options: ImageToVideoOptions): Promise<GeneratedVideoResult>;
+  analyzeImage?(options: ImageAnalysisOptions): Promise<ImageAnalysisResult>;
+  generateImageToImage?(options: GenerateImageOptions): Promise<GeneratedImageResult>;
 }

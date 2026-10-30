@@ -5,6 +5,7 @@ export type JobType =
   | 'RENDER_VIDEO'
   | 'GENERATE_CREATIVE'
   | 'GENERATE_CREATIVE_SET'
+  | 'GENERATE_STUDIO_BATCH'
   | 'GENERATE_CAPTION'
   | 'PUBLISH_META'
   | 'PUBLISH_ORGANIC'
@@ -57,6 +58,7 @@ const jobSchema = new Schema<IJob>(
         'RENDER_VIDEO',
         'GENERATE_CREATIVE',
         'GENERATE_CREATIVE_SET',
+        'GENERATE_STUDIO_BATCH',
         'GENERATE_CAPTION',
         'PUBLISH_META',
         'PUBLISH_ORGANIC',

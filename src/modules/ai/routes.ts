@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
 import { aiController } from './controller.js';
 import {
   generateImageSchema,
@@ -13,6 +14,11 @@ import { authorize } from '../../middleware/authorize.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 
 const router = Router();
+
+const studioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 // Public / lightweight generation endpoints (used in quick studio previews)
 router.post(
@@ -252,6 +258,39 @@ router.post(
   resolveTenant,
   authorize('creatives:approve'),
   asyncHandler((req: Request, res: Response) => aiController.setStudioReelApproval(req, res))
+);
+
+router.post(
+  '/projects/:projectId/studio-upload-photos',
+  authenticate,
+  resolveTenant,
+  authorize('media:upload'),
+  studioUpload.array('files', 20),
+  asyncHandler((req: Request, res: Response) => aiController.uploadStudioPhotos(req, res))
+);
+
+router.get(
+  '/studio-batches/:batchId/progress',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:read'),
+  asyncHandler((req: Request, res: Response) => aiController.getStudioBatchProgress(req, res))
+);
+
+router.post(
+  '/studio-batches/:batchId/images/:imageId/approval',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:approve'),
+  asyncHandler((req: Request, res: Response) => aiController.setStudioImageApproval(req, res))
+);
+
+router.post(
+  '/studio-batches/:batchId/images/:imageId/save-to-media',
+  authenticate,
+  resolveTenant,
+  authorize('media:upload'),
+  asyncHandler((req: Request, res: Response) => aiController.saveStudioImageToMedia(req, res))
 );
 
 export default router;

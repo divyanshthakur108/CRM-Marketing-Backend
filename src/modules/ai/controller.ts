@@ -644,23 +644,102 @@ export class AiController {
   };
 
   /**
-   * AI Studio: Generate 10-15 Fresh Images for Property
+   * AI Studio: Generate 10-15 Fresh Images for Property (Asynchronous Background Job Support)
    */
   public generateStudioImages = async (req: Request, res: Response): Promise<void> => {
     const organizationId = req.organizationId;
     if (!organizationId) throw AppError.unauthorized('Organization required');
 
     const { projectId } = req.params;
-    const { targetCount = 15, stylePreset = 'HERITAGE_LUXURY' } = req.body || {};
+    const { targetCount = 15, stylePreset = 'HERITAGE_LUXURY', isAsync = true } = req.body || {};
 
-    const batch = await aiStudioService.generateBatchImages(organizationId, projectId, {
-      targetCount: Number(targetCount),
-      stylePreset,
-    });
+    if (isAsync) {
+      const batch = await aiStudioService.queueBatchGeneration(organizationId, projectId, {
+        targetCount: Number(targetCount),
+        stylePreset,
+      });
 
-    sendSuccess(res, batch, 201, {
-      message: `Generated 15-Shot AI Marketing Image Suite (v${batch.version})`,
+      sendSuccess(res, batch, 202, {
+        message: `AI Image Generation job enqueued (v${batch.version}). Processing in background.`,
+      });
+    } else {
+      const batch = await aiStudioService.generateBatchImages(organizationId, projectId, {
+        targetCount: Number(targetCount),
+        stylePreset,
+      });
+
+      sendSuccess(res, batch, 201, {
+        message: `Generated ${batch.images.length}-Shot AI Marketing Image Suite (v${batch.version})`,
+      });
+    }
+  };
+
+  /**
+   * AI Studio: Multi-Photo Upload for Property
+   */
+  public uploadStudioPhotos = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { projectId } = req.params;
+    const files = (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
+
+    if (!files || files.length === 0) {
+      throw AppError.badRequest('No property photos uploaded. Please select 1 or more images.');
+    }
+
+    const assets = await aiStudioService.uploadStudioPhotos(organizationId, projectId, files);
+    sendSuccess(res, assets, 201, {
+      message: `Successfully uploaded and validated ${assets.length} property photos.`,
     });
+  };
+
+  /**
+   * AI Studio: Get Progress of Batch Generation
+   */
+  public getStudioBatchProgress = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { batchId } = req.params;
+    const batch = await aiStudioService.getBatchById(organizationId, batchId);
+    sendSuccess(res, {
+      id: batch._id,
+      status: batch.status,
+      progress: batch.progress ?? (batch.status === 'READY' ? 100 : 0),
+      currentStep: batch.currentStep || '',
+      imagesCount: batch.images?.length || 0,
+      version: batch.version,
+    });
+  };
+
+  /**
+   * AI Studio: Approve or Reject Single Image
+   */
+  public setStudioImageApproval = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { batchId, imageId } = req.params;
+    const { status } = req.body || {};
+    if (!status || !['APPROVED', 'REJECTED'].includes(status)) {
+      throw AppError.badRequest('status must be APPROVED or REJECTED');
+    }
+
+    const updated = await aiStudioService.setImageApproval(organizationId, batchId, imageId, status);
+    sendSuccess(res, updated, 200, { message: `Image marked as ${status}` });
+  };
+
+  /**
+   * AI Studio: Save Studio Image to Project Media Library
+   */
+  public saveStudioImageToMedia = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { batchId, imageId } = req.params;
+    const asset = await aiStudioService.saveImageToMediaLibrary(organizationId, batchId, imageId);
+    sendSuccess(res, asset, 201, { message: 'Image successfully saved to Project Media Library' });
   };
 
   /**

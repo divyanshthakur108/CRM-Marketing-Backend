@@ -20,6 +20,13 @@ export interface IAiStudioImage {
   visualHash?: string;
   similarityScore?: number;
   isDuplicateWarning?: boolean;
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  isVirtuallyStaged?: boolean;
+  structurePreservationScore?: number;
+  qualityScore?: number;
+  generationJobId?: string;
+  provider?: string;
+  savedToMediaId?: string;
 }
 
 export type ReelVariationStyle = 'CINEMATIC_SHOWCASE' | 'LUXURY_PRESENTATION' | 'MODERN_PROMO_AD';
@@ -68,7 +75,13 @@ export interface IAiStudioBatch extends Document {
   projectId: Types.ObjectId;
   unitId?: Types.ObjectId;
   version: number;
-  status: 'IDLE' | 'ANALYZING' | 'GENERATING' | 'READY' | 'FAILED';
+  status: 'IDLE' | 'QUEUED' | 'ANALYZING' | 'GENERATING' | 'READY' | 'FAILED';
+  progress?: number;
+  currentStep?: string;
+  jobId?: Types.ObjectId;
+  targetCount?: number;
+  costEstimatedUsd?: number;
+  costActualUsd?: number;
   visionAnalysis?: IPropertyVisionAnalysis;
   images: IAiStudioImage[];
   reels: IAiStudioReel[];
@@ -99,6 +112,17 @@ const aiStudioImageSchema = new Schema<IAiStudioImage>(
     visualHash: { type: String },
     similarityScore: { type: Number, default: 0 },
     isDuplicateWarning: { type: Boolean, default: false },
+    approvalStatus: {
+      type: String,
+      enum: ['PENDING', 'APPROVED', 'REJECTED'],
+      default: 'PENDING',
+    },
+    isVirtuallyStaged: { type: Boolean, default: false },
+    structurePreservationScore: { type: Number, default: 98 },
+    qualityScore: { type: Number, default: 95 },
+    generationJobId: { type: String },
+    provider: { type: String, default: 'realcrm-ai-engine' },
+    savedToMediaId: { type: String },
   },
   { _id: false }
 );
@@ -183,9 +207,15 @@ const aiStudioBatchSchema = new Schema<IAiStudioBatch>(
     },
     status: {
       type: String,
-      enum: ['IDLE', 'ANALYZING', 'GENERATING', 'READY', 'FAILED'],
+      enum: ['IDLE', 'QUEUED', 'ANALYZING', 'GENERATING', 'READY', 'FAILED'],
       default: 'IDLE',
     },
+    progress: { type: Number, default: 0 },
+    currentStep: { type: String, default: '' },
+    jobId: { type: Schema.Types.ObjectId, ref: 'Job' },
+    targetCount: { type: Number, default: 15 },
+    costEstimatedUsd: { type: Number, default: 0 },
+    costActualUsd: { type: Number, default: 0 },
     visionAnalysis: {
       type: propertyVisionAnalysisSchema,
     },
