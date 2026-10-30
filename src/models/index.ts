@@ -26,3 +26,4 @@ export * from './Notification.js';
 export * from './AuditLog.js';
 export * from './UsageLedger.js';
 export * from './Subscription.js';
+export * from './AiStudioBatch.js';

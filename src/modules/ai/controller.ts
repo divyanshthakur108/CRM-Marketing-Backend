@@ -19,6 +19,9 @@ import {
 import { getAIProvider, GeminiAIProvider } from './providers/index.js';
 import { env } from '../../config/env.js';
 import { OCCASIONS } from './occasionEngine.js';
+import { presenterWalkthroughService } from './presenterWalkthroughService.js';
+import { captionService } from './captionService.js';
+import { aiStudioService } from './aiStudioService.js';
 
 export class AiController {
   public getAiHealth = async (_req: Request, res: Response): Promise<void> => {
@@ -203,7 +206,7 @@ export class AiController {
     if (!organizationId) throw AppError.unauthorized('Organization required');
 
     const { id: projectId } = req.params;
-    const { mode = 'template', selectedAssetIds, factsSnapshot } = req.body || {};
+    const { mode = 'template', selectedAssetIds, factsSnapshot, stylePreset } = req.body || {};
 
     if (mode === 'ai_motion') {
       const role = req.membership?.role;
@@ -233,7 +236,8 @@ export class AiController {
     const result = await creativeEngineService.enqueueProjectCreatives(
       organizationId,
       projectId,
-      req.user?.userId
+      req.user?.userId,
+      { stylePreset }
     );
 
     if (!result.success) {
@@ -561,6 +565,192 @@ export class AiController {
    */
   public getOccasions = async (_req: Request, res: Response): Promise<void> => {
     sendSuccess(res, Object.values(OCCASIONS));
+  };
+
+  /**
+   * Generates a complete 9:16 Presenter Walkthrough Video with voiceover narration & avatar badge
+   */
+  public generatePresenterVideo = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { id: projectId } = req.params;
+    const { unitId, language, stylePreset, presenterAssetId, selectedAssetIds } = req.body || {};
+
+    const creative = await presenterWalkthroughService.generatePresenterWalkthroughVideo({
+      organizationId,
+      projectId,
+      unitId,
+      userId: req.user?.userId,
+      language: language || 'Hinglish',
+      stylePreset: stylePreset || 'HERITAGE_LUXURY',
+      presenterAssetId,
+      selectedAssetIds,
+    });
+
+    sendSuccess(res, creative, 201, {
+      message: 'Presenter Walkthrough Video synthesized successfully and submitted for review',
+    });
+  };
+
+  /**
+   * Generates 5-Step AI Captions & Ad Copy variants
+   */
+  public generateCaptions = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { id: projectId } = req.params;
+    const { unitId, stylePreset } = req.body || {};
+
+    const project = await Project.findOne({ _id: projectId, organizationId });
+    if (!project) throw AppError.notFound('Project not found');
+
+    const unit = unitId ? await PropertyUnit.findOne({ _id: unitId, organizationId }) : null;
+    const details = (project.details || {}) as Record<string, any>;
+
+    const result = await captionService.generateCaptions({
+      projectName: project.name || 'Luxury Residences',
+      category: project.category,
+      subtype: project.subtype,
+      city: project.location?.city || details.city || 'Mohali',
+      state: project.location?.state || details.state || 'Punjab',
+      sectorOrLocation: details.sector || project.location?.address || 'Sector 66 / Airport Road',
+      bhk: unit?.unitType || details.bhk ? `${details.bhk} BHK` : '3 BHK',
+      areaSqFt: unit?.carpetAreaSqFt || unit?.superBuiltUpAreaSqFt || details.carpetAreaSqFt || '1850',
+      priceDisplay: unit?.price ? `₹ ${(unit.price / 10000000).toFixed(2)} Cr*` : details.priceRange || '₹ 1.25 Cr Onwards',
+      amenities: project.amenities || ['Clubhouse', 'Swimming Pool', 'Security'],
+      reraNumber: project.reraNumber,
+      salesPhone: project.ownerContacts?.[0]?.phone || '+91 77103-80077',
+      salesOfficeName: project.ownerContacts?.[0]?.name || 'Experience Centre',
+      stylePreset: stylePreset || 'HERITAGE_LUXURY',
+    });
+
+    sendSuccess(res, result, 200, {
+      message: 'Captions generated successfully',
+    });
+  };
+
+  /**
+   * AI Studio: Vision Analysis of Client Uploaded Photos
+   */
+  public analyzeStudioProperty = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { projectId } = req.params;
+    const vision = await aiStudioService.analyzePropertyPhotos(organizationId, projectId);
+    sendSuccess(res, vision, 200, { message: 'Property photos analyzed successfully' });
+  };
+
+  /**
+   * AI Studio: Generate 10-15 Fresh Images for Property
+   */
+  public generateStudioImages = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { projectId } = req.params;
+    const { targetCount = 15, stylePreset = 'HERITAGE_LUXURY' } = req.body || {};
+
+    const batch = await aiStudioService.generateBatchImages(organizationId, projectId, {
+      targetCount: Number(targetCount),
+      stylePreset,
+    });
+
+    sendSuccess(res, batch, 201, {
+      message: `Generated 15-Shot AI Marketing Image Suite (v${batch.version})`,
+    });
+  };
+
+  /**
+   * AI Studio: Regenerate Single Image in Batch
+   */
+  public regenerateStudioImage = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { batchId } = req.params;
+    const { imageId } = req.body || {};
+    if (!imageId) throw AppError.badRequest('imageId is required');
+
+    const updatedImage = await aiStudioService.regenerateSingleImage(organizationId, batchId, imageId);
+    sendSuccess(res, updatedImage, 200, { message: 'Image re-rendered successfully with fresh perspective' });
+  };
+
+  /**
+   * AI Studio: Update Selection of Images
+   */
+  public updateStudioSelection = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { batchId } = req.params;
+    const { selectedImageIds = [] } = req.body || {};
+
+    const batch = await aiStudioService.updateImageSelection(organizationId, batchId, selectedImageIds);
+    sendSuccess(res, batch, 200, { message: 'Image selection updated' });
+  };
+
+  /**
+   * AI Studio: Generate AI Reel from Selected Images
+   */
+  public generateStudioReel = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { batchId } = req.params;
+    const { variationStyle = 'CINEMATIC_SHOWCASE', selectedImageIds } = req.body || {};
+
+    const reel = await aiStudioService.generateAiReel(
+      organizationId,
+      batchId,
+      variationStyle,
+      selectedImageIds
+    );
+
+    sendSuccess(res, reel, 201, { message: 'AI Reel synthesized successfully' });
+  };
+
+  /**
+   * AI Studio: Get Batches for a Project
+   */
+  public getStudioBatches = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { projectId } = req.params;
+    const batches = await aiStudioService.getBatches(organizationId, projectId);
+    sendSuccess(res, batches);
+  };
+
+  /**
+   * AI Studio: Get Batch By ID
+   */
+  public getStudioBatchById = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { batchId } = req.params;
+    const batch = await aiStudioService.getBatchById(organizationId, batchId);
+    sendSuccess(res, batch);
+  };
+
+  /**
+   * AI Studio: Approve or Reject a Studio Reel
+   */
+  public setStudioReelApproval = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = req.organizationId;
+    if (!organizationId) throw AppError.unauthorized('Organization required');
+
+    const { batchId, reelId } = req.params;
+    const { status } = req.body || {};
+    if (!status || !['APPROVED', 'REJECTED'].includes(status)) {
+      throw AppError.badRequest('status must be APPROVED or REJECTED');
+    }
+
+    const reel = await aiStudioService.setReelApproval(organizationId, batchId, reelId, status);
+    sendSuccess(res, reel, 200, { message: `Reel status updated to ${status}` });
   };
 }
 

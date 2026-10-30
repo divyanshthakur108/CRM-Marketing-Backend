@@ -30,6 +30,7 @@ export interface ShowcasePosterData {
   isAllActualPhotos: boolean;
   orgName: string;
   brandPrimaryColor?: string;
+  stylePreset?: 'HERITAGE_LUXURY' | 'HIGH_GROWTH_ROI';
 }
 
 export interface SelectedPosterPhotos {
@@ -183,8 +184,9 @@ export function buildShowcaseFacts(params: {
   organization?: IOrganization | null;
   brand?: IBrandProfile | null;
   isAllActualPhotos: boolean;
+  stylePreset?: 'HERITAGE_LUXURY' | 'HIGH_GROWTH_ROI';
 }): ShowcasePosterData {
-  const { project, unit, organization, brand, isAllActualPhotos } = params;
+  const { project, unit, organization, brand, isAllActualPhotos, stylePreset = 'HERITAGE_LUXURY' } = params;
 
   const category = (project.category || 'RESIDENTIAL').toUpperCase();
 
@@ -319,6 +321,7 @@ export function buildShowcaseFacts(params: {
     isAllActualPhotos,
     orgName,
     brandPrimaryColor,
+    stylePreset,
   };
 }
 
@@ -408,19 +411,49 @@ function wrapTitle(title: string, maxCharsPerLine = 24): { lines: string[]; font
 }
 
 /**
- * Generates the background SVG (soft mint gradient and rounded border frame)
+ * Generates the background SVG based on style preset
+ * - HERITAGE_LUXURY (GDPL Mohali style): Elegant warm ivory/slate gradient with gold frame
+ * - HIGH_GROWTH_ROI (ACE INFRA style): Sleek deep midnight slate with electric cyan glow and frame
  */
-export function buildShowcaseBackgroundSvg(width: number, height: number, outerPadding: number): string {
+export function buildShowcaseBackgroundSvg(
+  width: number,
+  height: number,
+  outerPadding: number,
+  stylePreset: 'HERITAGE_LUXURY' | 'HIGH_GROWTH_ROI' = 'HERITAGE_LUXURY'
+): string {
+  if (stylePreset === 'HIGH_GROWTH_ROI') {
+    return `
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="bgGradRoi" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#070B14"/>
+            <stop offset="50%" stop-color="#0B1325"/>
+            <stop offset="100%" stop-color="#030712"/>
+          </linearGradient>
+          <radialGradient id="cyanGlow" cx="50%" cy="100%" r="65%">
+            <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.18"/>
+            <stop offset="100%" stop-color="#06B6D4" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect width="${width}" height="${height}" fill="url(#bgGradRoi)"/>
+        <rect width="${width}" height="${height}" fill="url(#cyanGlow)"/>
+        <rect x="${outerPadding}" y="${outerPadding}" width="${width - outerPadding * 2}" height="${height - outerPadding * 2}" rx="20" fill="none" stroke="#06B6D4" stroke-opacity="0.35" stroke-width="1.5"/>
+      </svg>
+    `;
+  }
+
+  // Default: HERITAGE_LUXURY (GDPL Mohali Style)
   return `
     <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#ECFDF5"/>
-          <stop offset="100%" stop-color="#F8FAFC"/>
+        <linearGradient id="bgGradLuxury" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#FAF8F5"/>
+          <stop offset="50%" stop-color="#F8FAFC"/>
+          <stop offset="100%" stop-color="#F1F5F9"/>
         </linearGradient>
       </defs>
-      <rect width="${width}" height="${height}" fill="url(#bgGrad)"/>
-      <rect x="${outerPadding}" y="${outerPadding}" width="${width - outerPadding * 2}" height="${height - outerPadding * 2}" rx="20" fill="none" stroke="#E2E8F0" stroke-width="1.5"/>
+      <rect width="${width}" height="${height}" fill="url(#bgGradLuxury)"/>
+      <rect x="${outerPadding}" y="${outerPadding}" width="${width - outerPadding * 2}" height="${height - outerPadding * 2}" rx="20" fill="none" stroke="#D97706" stroke-opacity="0.3" stroke-width="1.5"/>
     </svg>
   `;
 }
@@ -439,6 +472,7 @@ export function buildShowcaseForegroundSvg(params: {
   thumbBoxes: Array<{ x: number; y: number; w: number; h: number }>;
 }): string {
   const { width, height, ratio, data, heroTag, thumbTags, heroBox, thumbBoxes } = params;
+  const isRoiMode = data.stylePreset === 'HIGH_GROWTH_ROI';
 
   const escapeXml = (s?: string) =>
     (s || '')
@@ -447,12 +481,46 @@ export function buildShowcaseForegroundSvg(params: {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
 
-  const brandPrimary = data.brandPrimaryColor || '#0D9488';
-  const lightTeal = '#F0FDFA';
-  const lightTealBorder = '#99F6E4';
-  const darkChipBg = '#134E4A';
-  const navyText = '#0F172A';
-  const mutedText = '#64748B';
+  // Style Tokens based on preset
+  const brandPrimary = isRoiMode ? '#06B6D4' : (data.brandPrimaryColor && data.brandPrimaryColor !== '#0D9488' ? data.brandPrimaryColor : '#D97706');
+  const accentGold = '#D97706';
+  const electricCyan = '#06B6D4';
+
+  const pillBorder = isRoiMode ? '#06B6D4' : '#D97706';
+  const pillBg = isRoiMode ? '#08172E' : '#FFFFFF';
+  const pillDot = isRoiMode ? '#22D3EE' : '#D97706';
+  const pillText = isRoiMode ? '#38BDF8' : '#B45309';
+
+  const titleColor = isRoiMode ? '#FFFFFF' : '#0F172A';
+  const underlineColor = isRoiMode ? '#06B6D4' : '#D97706';
+  const subtitleColor = isRoiMode ? '#94A3B8' : '#64748B';
+  const bracketLinesColor = isRoiMode ? '#083344' : '#FDE68A';
+
+  const chipBg = isRoiMode ? '#04172B' : '#0F172A';
+  const chipDot = isRoiMode ? '#06B6D4' : '#F59E0B';
+
+  const cardBg = isRoiMode ? '#0B1325' : '#FFFFFF';
+  const cardBorder = isRoiMode ? '#1E293B' : '#F1F5F9';
+  const cardShadowOpacity = isRoiMode ? '0.35' : '0.07';
+  const cardShadowColor = isRoiMode ? '#000000' : '#0F172A';
+
+  const priceColor = isRoiMode ? '#F59E0B' : '#0F172A';
+  const priceLabelColor = isRoiMode ? '#38BDF8' : '#64748B';
+
+  const infoChipBg = isRoiMode ? '#082542' : '#FFFBEB';
+  const infoChipBorder = isRoiMode ? '#0284C7' : '#FDE68A';
+  const infoChipText = isRoiMode ? '#38BDF8' : '#B45309';
+
+  const cta1Bg = isRoiMode ? '#082542' : '#FFFBEB';
+  const cta1Border = isRoiMode ? '#06B6D4' : '#D97706';
+  const cta1Text = isRoiMode ? '#38BDF8' : '#B45309';
+
+  const cta2Bg = isRoiMode ? '#06B6D4' : '#0F172A';
+  const cta2Text = isRoiMode ? '#021827' : '#FFFFFF';
+
+  const contactTextColor = isRoiMode ? '#F1F5F9' : '#0F172A';
+  const legalTextColor = isRoiMode ? '#64748B' : '#94A3B8';
+  const footerTextColor = isRoiMode ? '#475569' : '#64748B';
 
   const outerPadding = ratio === '1:1' ? 20 : 24;
   const contentW = width - 96;
@@ -535,8 +603,8 @@ export function buildShowcaseForegroundSvg(params: {
   for (const chip of chipItems) {
     chipSvgElements.push(`
       <g transform="translate(${currentChipX}, ${cardInnerTop + 10})">
-        <rect x="0" y="0" width="${chip.w}" height="${chip.h}" rx="6" fill="${lightTeal}" stroke="${lightTealBorder}" stroke-width="1"/>
-        <text x="${chip.w / 2}" y="18.5" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="${brandPrimary}" text-anchor="middle" letter-spacing="0.8">${escapeXml(chip.text)}</text>
+        <rect x="0" y="0" width="${chip.w}" height="${chip.h}" rx="6" fill="${infoChipBg}" stroke="${infoChipBorder}" stroke-width="1"/>
+        <text x="${chip.w / 2}" y="18.5" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="${infoChipText}" text-anchor="middle" letter-spacing="0.8">${escapeXml(chip.text)}</text>
       </g>
     `);
     currentChipX += chip.w + 8;
@@ -545,47 +613,47 @@ export function buildShowcaseForegroundSvg(params: {
   return `
     <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <!-- Soft Card Drop Shadow -->
+        <!-- Card Drop Shadow -->
         <filter id="cardShadow" x="-5%" y="-5%" width="110%" height="120%">
-          <feDropShadow dx="0" dy="6" stdDeviation="16" flood-color="#0F172A" flood-opacity="0.07"/>
+          <feDropShadow dx="0" dy="6" stdDeviation="16" flood-color="${cardShadowColor}" flood-opacity="${cardShadowOpacity}"/>
         </filter>
       </defs>
 
       <!-- ================= HEADER SECTION ================= -->
       <!-- Decorative Vertical End-Lines -->
-      <line x1="48" y1="${catPillY + 4}" x2="48" y2="${subtitleY + 4}" stroke="#CCFBF1" stroke-width="2" stroke-linecap="round"/>
-      <line x1="${width - 48}" y1="${catPillY + 4}" x2="${width - 48}" y2="${subtitleY + 4}" stroke="#CCFBF1" stroke-width="2" stroke-linecap="round"/>
+      <line x1="48" y1="${catPillY + 4}" x2="48" y2="${subtitleY + 4}" stroke="${bracketLinesColor}" stroke-width="2" stroke-linecap="round"/>
+      <line x1="${width - 48}" y1="${catPillY + 4}" x2="${width - 48}" y2="${subtitleY + 4}" stroke="${bracketLinesColor}" stroke-width="2" stroke-linecap="round"/>
 
       <!-- Outlined Category Pill -->
       <g transform="translate(${cx}, ${catPillY})">
-        <rect x="-${catPillW / 2}" y="0" width="${catPillW}" height="26" rx="13" fill="#FFFFFF" stroke="${brandPrimary}" stroke-width="1.2"/>
-        <circle cx="-${catPillW / 2 - 14}" cy="13" r="3.2" fill="${brandPrimary}"/>
-        <text x="6" y="17.5" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="${brandPrimary}" text-anchor="middle" letter-spacing="1.5">${escapeXml(data.category)}</text>
+        <rect x="-${catPillW / 2}" y="0" width="${catPillW}" height="26" rx="13" fill="${pillBg}" stroke="${pillBorder}" stroke-width="1.2"/>
+        <circle cx="-${catPillW / 2 - 14}" cy="13" r="3.2" fill="${pillDot}"/>
+        <text x="6" y="17.5" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="${pillText}" text-anchor="middle" letter-spacing="1.5">${escapeXml(data.category)}</text>
       </g>
 
       <!-- Project Title -->
       ${titleLines
         .map(
           (line, idx) =>
-            `<text x="${cx}" y="${titleStartY + idx * titleLineHeight}" font-family="Inter, -apple-system, sans-serif" font-size="${titleFontSize}" font-weight="800" fill="${navyText}" text-anchor="middle">${escapeXml(line)}</text>`
+            `<text x="${cx}" y="${titleStartY + idx * titleLineHeight}" font-family="Inter, -apple-system, sans-serif" font-size="${titleFontSize}" font-weight="800" fill="${titleColor}" text-anchor="middle">${escapeXml(line)}</text>`
         )
         .join('')}
 
       <!-- Short Underline Bar -->
-      <rect x="${cx - 24}" y="${underlineY}" width="48" height="3.5" rx="1.75" fill="${brandPrimary}"/>
+      <rect x="${cx - 24}" y="${underlineY}" width="48" height="3.5" rx="1.75" fill="${underlineColor}"/>
 
-      <!-- Muted Subtitle -->
+      <!-- Subtitle -->
       ${
         subtitleText
-          ? `<text x="${cx}" y="${subtitleY}" font-family="Inter, -apple-system, sans-serif" font-size="${ratio === '1:1' ? 13.5 : 15}" font-weight="500" fill="${mutedText}" text-anchor="middle">${escapeXml(subtitleText)}</text>`
+          ? `<text x="${cx}" y="${subtitleY}" font-family="Inter, -apple-system, sans-serif" font-size="${ratio === '1:1' ? 13.5 : 15}" font-weight="500" fill="${subtitleColor}" text-anchor="middle">${escapeXml(subtitleText)}</text>`
           : ''
       }
 
       <!-- ================= PHOTO LABEL CHIPS ================= -->
       <!-- Hero Chip -->
       <g transform="translate(${heroBox.x + 16}, ${heroBox.y + heroBox.h - (ratio === '1:1' ? 36 : 42)})">
-        <rect x="0" y="0" width="${Math.max(110, heroTag.length * 8.5 + 36)}" height="28" rx="6" fill="${darkChipBg}" opacity="0.94"/>
-        <circle cx="14" cy="14" r="3" fill="#2DD4BF"/>
+        <rect x="0" y="0" width="${Math.max(110, heroTag.length * 8.5 + 36)}" height="28" rx="6" fill="${chipBg}" opacity="0.94"/>
+        <circle cx="14" cy="14" r="3" fill="${chipDot}"/>
         <text x="25" y="18.5" font-family="Inter, -apple-system, sans-serif" font-size="11.5" font-weight="700" fill="#FFFFFF" letter-spacing="1">${escapeXml(heroTag)}</text>
       </g>
 
@@ -596,29 +664,29 @@ export function buildShowcaseForegroundSvg(params: {
           const chipW = Math.max(86, tag.length * 7.5 + 28);
           return `
             <g transform="translate(${tBox.x + 10}, ${tBox.y + tBox.h - 32})">
-              <rect x="0" y="0" width="${chipW}" height="22" rx="5" fill="${darkChipBg}" opacity="0.94"/>
-              <circle cx="10" cy="11" r="2.5" fill="#2DD4BF"/>
+              <rect x="0" y="0" width="${chipW}" height="22" rx="5" fill="${chipBg}" opacity="0.94"/>
+              <circle cx="10" cy="11" r="2.5" fill="${chipDot}"/>
               <text x="18" y="15" font-family="Inter, -apple-system, sans-serif" font-size="9.5" font-weight="700" fill="#FFFFFF" letter-spacing="0.8">${escapeXml(tag)}</text>
             </g>
           `;
         })
         .join('')}
 
-      <!-- ================= WHITE INFO CARD ================= -->
+      <!-- ================= INFO CARD ================= -->
       <g>
-        <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="16" fill="#FFFFFF" filter="url(#cardShadow)"/>
-        <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="16" fill="none" stroke="#F1F5F9" stroke-width="1.2"/>
+        <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="16" fill="${cardBg}" filter="url(#cardShadow)"/>
+        <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="16" fill="none" stroke="${cardBorder}" stroke-width="1.2"/>
 
         <!-- Left: Investment / Price Block (only if price exists) -->
         ${
           data.hasPrice
             ? `
               <g transform="translate(${cardX + 32}, ${cardInnerTop})">
-                <text x="0" y="12" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="${mutedText}" letter-spacing="1.5">INVESTMENT</text>
-                <text x="0" y="44" font-family="Inter, -apple-system, sans-serif" font-size="${ratio === '1:1' ? 28 : 34}" font-weight="800" fill="${brandPrimary}">${escapeXml(data.priceDisplay)}</text>
+                <text x="0" y="12" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="${priceLabelColor}" letter-spacing="1.5">INVESTMENT</text>
+                <text x="0" y="44" font-family="Inter, -apple-system, sans-serif" font-size="${ratio === '1:1' ? 28 : 34}" font-weight="800" fill="${priceColor}">${escapeXml(data.priceDisplay)}</text>
                 ${
                   data.priceNote
-                    ? `<text x="${(data.priceDisplay || '').length * (ratio === '1:1' ? 16 : 19) + 12}" y="40" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="500" fill="${mutedText}">${escapeXml(data.priceNote)}</text>`
+                    ? `<text x="${(data.priceDisplay || '').length * (ratio === '1:1' ? 16 : 19) + 12}" y="40" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="500" fill="${subtitleColor}">${escapeXml(data.priceNote)}</text>`
                     : ''
                 }
               </g>
@@ -626,42 +694,42 @@ export function buildShowcaseForegroundSvg(params: {
             : ''
         }
 
-        <!-- Right: Light Teal Chips Row -->
+        <!-- Right: Info Chips Row -->
         <g>
           ${chipSvgElements.join('')}
         </g>
 
         <!-- Card Divider -->
-        <line x1="${cardX + 28}" y1="${dividerY}" x2="${cardX + cardW - 28}" y2="${dividerY}" stroke="#F1F5F9" stroke-width="1.5"/>
+        <line x1="${cardX + 28}" y1="${dividerY}" x2="${cardX + cardW - 28}" y2="${dividerY}" stroke="${cardBorder}" stroke-width="1.5"/>
 
         <!-- Two CTA Buttons Side by Side (Visual Only) -->
         <g transform="translate(${cx}, ${ctaRowY})">
           <!-- Button 1: Outlined Request Details -->
           <g transform="translate(-214, 0)">
-            <rect x="0" y="0" width="206" height="${ctaButtonH}" rx="22" fill="${lightTeal}" stroke="${brandPrimary}" stroke-width="1.5"/>
-            <text x="103" y="${ratio === '1:1' ? 25 : 27}" font-family="Inter, -apple-system, sans-serif" font-size="13.5" font-weight="700" fill="${brandPrimary}" text-anchor="middle">Request Details</text>
+            <rect x="0" y="0" width="206" height="${ctaButtonH}" rx="22" fill="${cta1Bg}" stroke="${cta1Border}" stroke-width="1.5"/>
+            <text x="103" y="${ratio === '1:1' ? 25 : 27}" font-family="Inter, -apple-system, sans-serif" font-size="13.5" font-weight="700" fill="${cta1Text}" text-anchor="middle">Request Details</text>
           </g>
 
           <!-- Button 2: Filled Book a Visit -->
           <g transform="translate(8, 0)">
-            <rect x="0" y="0" width="206" height="${ctaButtonH}" rx="22" fill="${brandPrimary}"/>
-            <text x="103" y="${ratio === '1:1' ? 25 : 27}" font-family="Inter, -apple-system, sans-serif" font-size="13.5" font-weight="700" fill="#FFFFFF" text-anchor="middle">Book a Visit →</text>
+            <rect x="0" y="0" width="206" height="${ctaButtonH}" rx="22" fill="${cta2Bg}"/>
+            <text x="103" y="${ratio === '1:1' ? 25 : 27}" font-family="Inter, -apple-system, sans-serif" font-size="13.5" font-weight="700" fill="${cta2Text}" text-anchor="middle">Book a Visit →</text>
           </g>
         </g>
 
         <!-- Contact Line (Centered) -->
         ${
           contactLine
-            ? `<text x="${cx}" y="${contactY}" font-family="Inter, -apple-system, sans-serif" font-size="${ratio === '1:1' ? 12 : 13.5}" font-weight="600" fill="${navyText}" text-anchor="middle">${escapeXml(contactLine)}</text>`
+            ? `<text x="${cx}" y="${contactY}" font-family="Inter, -apple-system, sans-serif" font-size="${ratio === '1:1' ? 12 : 13.5}" font-weight="600" fill="${contactTextColor}" text-anchor="middle">${escapeXml(contactLine)}</text>`
             : ''
         }
 
         <!-- Legal Line (Centered, Muted) -->
-        <text x="${cx}" y="${legalTextY}" font-family="Inter, -apple-system, sans-serif" font-size="${ratio === '1:1' ? 9.5 : 10.5}" font-weight="400" fill="#94A3B8" text-anchor="middle">${escapeXml(legalLine)}</text>
+        <text x="${cx}" y="${legalTextY}" font-family="Inter, -apple-system, sans-serif" font-size="${ratio === '1:1' ? 9.5 : 10.5}" font-weight="400" fill="${legalTextColor}" text-anchor="middle">${escapeXml(legalLine)}</text>
       </g>
 
       <!-- ================= FOOTER SECTION ================= -->
-      <text x="${cx}" y="${footerY}" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="${mutedText}" text-anchor="middle" letter-spacing="2">${escapeXml(data.orgName)}</text>
+      <text x="${cx}" y="${footerY}" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="${footerTextColor}" text-anchor="middle" letter-spacing="2">${escapeXml(data.orgName)}</text>
     </svg>
   `;
 }
@@ -787,7 +855,7 @@ export async function renderShowcasePoster(params: {
   }
 
   // 4. Generate Background SVG and Foreground SVG
-  const bgSvg = buildShowcaseBackgroundSvg(width, height, outerPadding);
+  const bgSvg = buildShowcaseBackgroundSvg(width, height, outerPadding, data.stylePreset);
   const fgSvg = buildShowcaseForegroundSvg({
     width,
     height,

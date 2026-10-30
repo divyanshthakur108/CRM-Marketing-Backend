@@ -34,6 +34,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^8.7.1",
+    "google-tts-api": "^2.0.2",
     "helmet": "^8.0.0",
     "jsonwebtoken": "9.0.2",
     "jws": "3.2.2",

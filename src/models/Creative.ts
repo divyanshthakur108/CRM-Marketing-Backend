@@ -74,6 +74,9 @@ export interface ICreative extends Document {
   history: ICreativeHistory[];
   occasion?: string;
   extensionType?: 'NONE' | 'AI_CONTINUATION';
+  stylePreset?: 'HERITAGE_LUXURY' | 'HIGH_GROWTH_ROI';
+  isPresenterWalkthrough?: boolean;
+  presenterScript?: any;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -169,6 +172,19 @@ const creativeSchema = new Schema<ICreative>(
       type: String,
       enum: ['NONE', 'AI_CONTINUATION'],
       default: 'NONE',
+    },
+    stylePreset: {
+      type: String,
+      enum: ['HERITAGE_LUXURY', 'HIGH_GROWTH_ROI'],
+      default: 'HERITAGE_LUXURY',
+      index: true,
+    },
+    isPresenterWalkthrough: {
+      type: Boolean,
+      default: false,
+    },
+    presenterScript: {
+      type: Schema.Types.Mixed,
     },
     headline: {
       type: String,

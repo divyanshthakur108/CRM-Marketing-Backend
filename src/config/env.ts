@@ -1,7 +1,20 @@
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
 import { z } from 'zod';
 
 // Ensure environment variables are loaded
+const candidateEnvPaths = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), 'backend', '.env'),
+  path.resolve(process.cwd(), '..', '.env'),
+];
+for (const p of candidateEnvPaths) {
+  if (fs.existsSync(p)) {
+    dotenv.config({ path: p });
+    break;
+  }
+}
 dotenv.config();
 
 const envSchema = z.object({

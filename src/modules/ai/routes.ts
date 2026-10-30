@@ -120,6 +120,22 @@ router.post(
 );
 
 router.post(
+  '/projects/:id/generate-presenter-video',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:create'),
+  asyncHandler((req: Request, res: Response) => aiController.generatePresenterVideo(req, res))
+);
+
+router.post(
+  '/projects/:id/generate-captions',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:create'),
+  asyncHandler((req: Request, res: Response) => aiController.generateCaptions(req, res))
+);
+
+router.post(
   '/creatives/:id/approve',
   authenticate,
   resolveTenant,
@@ -171,6 +187,71 @@ router.get(
   authenticate,
   resolveTenant,
   asyncHandler((req: Request, res: Response) => aiController.getJobs(req, res))
+);
+
+// ================= AI STUDIO: 15-SHOT IMAGE & REEL GENERATION ROUTES =================
+router.get(
+  '/projects/:projectId/studio-batches',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:read'),
+  asyncHandler((req: Request, res: Response) => aiController.getStudioBatches(req, res))
+);
+
+router.get(
+  '/studio-batches/:batchId',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:read'),
+  asyncHandler((req: Request, res: Response) => aiController.getStudioBatchById(req, res))
+);
+
+router.post(
+  '/projects/:projectId/studio-analyze',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:create'),
+  asyncHandler((req: Request, res: Response) => aiController.analyzeStudioProperty(req, res))
+);
+
+router.post(
+  '/projects/:projectId/studio-generate-images',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:create'),
+  asyncHandler((req: Request, res: Response) => aiController.generateStudioImages(req, res))
+);
+
+router.post(
+  '/studio-batches/:batchId/regenerate-image',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:create'),
+  asyncHandler((req: Request, res: Response) => aiController.regenerateStudioImage(req, res))
+);
+
+router.patch(
+  '/studio-batches/:batchId/selection',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:update'),
+  asyncHandler((req: Request, res: Response) => aiController.updateStudioSelection(req, res))
+);
+
+router.post(
+  '/studio-batches/:batchId/generate-reel',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:create'),
+  asyncHandler((req: Request, res: Response) => aiController.generateStudioReel(req, res))
+);
+
+router.post(
+  '/studio-batches/:batchId/reels/:reelId/approval',
+  authenticate,
+  resolveTenant,
+  authorize('creatives:approve'),
+  asyncHandler((req: Request, res: Response) => aiController.setStudioReelApproval(req, res))
 );
 
 export default router;

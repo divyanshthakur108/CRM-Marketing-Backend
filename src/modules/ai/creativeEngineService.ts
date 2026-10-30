@@ -117,7 +117,8 @@ export class CreativeEngineService {
   public async enqueueProjectCreatives(
     orgId: Types.ObjectId | string,
     projId: Types.ObjectId | string,
-    _userId?: string
+    _userId?: string,
+    options?: { stylePreset?: 'HERITAGE_LUXURY' | 'HIGH_GROWTH_ROI' }
   ): Promise<EnqueueResult> {
     const organizationId = this.toObjectId(orgId);
     const projectId = this.toObjectId(projId);
@@ -240,6 +241,7 @@ export class CreativeEngineService {
         unitType: target.unitType,
         mediaAssetIds: target.mediaAssets.map((m) => m._id.toString()),
         mediaFingerprint,
+        stylePreset: options?.stylePreset || 'HERITAGE_LUXURY',
       };
 
       const job = await jobQueue.enqueueJob({
@@ -271,12 +273,13 @@ export class CreativeEngineService {
    * Creates 1 poster set (1:1, 4:5, 9:16) via sharp and 1 reel (9:16) via ffmpeg.
    */
   public async processCreativeSetJob(job: IJob): Promise<void> {
-    const { organizationId, projectId, unitId, unitType, mediaAssetIds } = job.payload as {
+    const { organizationId, projectId, unitId, unitType, mediaAssetIds, stylePreset } = job.payload as {
       organizationId: string;
       projectId: string;
       unitId?: string;
       unitType?: string;
       mediaAssetIds: string[];
+      stylePreset?: 'HERITAGE_LUXURY' | 'HIGH_GROWTH_ROI';
     };
 
     const orgId = this.toObjectId(organizationId);
@@ -328,6 +331,7 @@ export class CreativeEngineService {
       organization,
       brand,
       isAllActualPhotos: selectedPhotos.isAllActual,
+      stylePreset: stylePreset || 'HERITAGE_LUXURY',
     });
 
     const factsSnapshot: Record<string, string> = {
@@ -404,6 +408,7 @@ export class CreativeEngineService {
       generatedBy: 'template',
       isIllustrative: !selectedPhotos.isAllActual,
       cost: 1,
+      stylePreset: stylePreset || 'HERITAGE_LUXURY',
       status: 'ready_for_review',
       approvalStatus: 'PENDING_APPROVAL',
       version: 1,
