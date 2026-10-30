@@ -110,16 +110,24 @@ class ProjectService {
     return projectsWithCounts;
   }
 
-  public async getProjectById(orgId: Types.ObjectId | string, projectId: string): Promise<IProject> {
+  public async getProjectById(
+    orgId: Types.ObjectId | string,
+    projectId: string,
+    isPlatformAdmin?: boolean
+  ): Promise<IProject> {
     const organizationId = this.toObjectId(orgId);
     if (!Types.ObjectId.isValid(projectId)) {
       throw AppError.notFound('Project not found');
     }
 
-    const project = await Project.findOne({
+    let project = await Project.findOne({
       _id: projectId,
       organizationId,
     });
+
+    if (!project && isPlatformAdmin) {
+      project = await Project.findById(projectId);
+    }
 
     if (!project) {
       throw AppError.notFound('Project not found or belongs to another organization');
@@ -144,13 +152,15 @@ class ProjectService {
   public async updateProject(
     orgId: Types.ObjectId | string,
     projectId: string,
-    input: UpdateProjectInput
+    input: UpdateProjectInput,
+    isPlatformAdmin?: boolean
   ): Promise<IProject> {
     const organizationId = this.toObjectId(orgId);
-    const project = await this.getProjectById(organizationId, projectId);
+    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
+    const targetOrgId = project.organizationId as Types.ObjectId;
 
     if (input.name && input.name !== project.name) {
-      project.slug = await this.getUniqueSlug(organizationId, input.name, project._id as Types.ObjectId);
+      project.slug = await this.getUniqueSlug(targetOrgId, input.name, project._id as Types.ObjectId);
       project.name = input.name;
     }
 
@@ -194,7 +204,7 @@ class ProjectService {
     if (hasSpecChanges) {
       try {
         await creativeService.flagCreativesForReReview(
-          organizationId,
+          targetOrgId,
           project._id as Types.ObjectId,
           'Project master specifications updated'
         );
@@ -206,12 +216,12 @@ class ProjectService {
     return project;
   }
 
-  public async deleteProject(orgId: Types.ObjectId | string, projectId: string): Promise<void> {
+  public async deleteProject(orgId: Types.ObjectId | string, projectId: string, isPlatformAdmin?: boolean): Promise<void> {
     const organizationId = this.toObjectId(orgId);
-    const project = await this.getProjectById(organizationId, projectId);
+    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
 
     // Delete all units belonging to the project
-    await PropertyUnit.deleteMany({ organizationId, projectId: project._id });
+    await PropertyUnit.deleteMany({ organizationId: project.organizationId, projectId: project._id });
     await project.deleteOne();
   }
 
@@ -219,9 +229,9 @@ class ProjectService {
    * Returns project data sanitized for public ad rendering
    * Strips ownerContacts, privateDocuments, and privateNotes
    */
-  public async getPublicAdProject(orgId: Types.ObjectId | string, projectId: string) {
+  public async getPublicAdProject(orgId: Types.ObjectId | string, projectId: string, isPlatformAdmin?: boolean) {
     const organizationId = this.toObjectId(orgId);
-    const project = await this.getProjectById(organizationId, projectId);
+    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
     const obj = project.toObject() as Partial<IProject>;
 
     delete obj.ownerContacts;
@@ -236,13 +246,14 @@ class ProjectService {
   public async listUnits(
     orgId: Types.ObjectId | string,
     projectId: string,
-    query: UnitListQuery = {}
+    query: UnitListQuery = {},
+    isPlatformAdmin?: boolean
   ): Promise<IPropertyUnit[]> {
     const organizationId = this.toObjectId(orgId);
-    await this.getProjectById(organizationId, projectId);
+    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
 
     const filter: Record<string, unknown> = {
-      organizationId,
+      organizationId: project.organizationId,
       projectId: new Types.ObjectId(projectId),
     };
 
@@ -267,17 +278,19 @@ class ProjectService {
   public async getUnitById(
     orgId: Types.ObjectId | string,
     projectId: string,
-    unitId: string
+    unitId: string,
+    isPlatformAdmin?: boolean
   ): Promise<IPropertyUnit> {
     const organizationId = this.toObjectId(orgId);
+    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
     if (!Types.ObjectId.isValid(unitId)) {
       throw AppError.notFound('Unit not found');
     }
 
     const unit = await PropertyUnit.findOne({
       _id: unitId,
-      projectId,
-      organizationId,
+      projectId: project._id,
+      organizationId: project.organizationId,
     });
 
     if (!unit) {
@@ -290,10 +303,11 @@ class ProjectService {
   public async createUnit(
     orgId: Types.ObjectId | string,
     projectId: string,
-    input: CreateUnitInput
+    input: CreateUnitInput,
+    isPlatformAdmin?: boolean
   ): Promise<IPropertyUnit> {
     const organizationId = this.toObjectId(orgId);
-    const project = await this.getProjectById(organizationId, projectId);
+    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
 
     // Enforce per-category validation if project is a plot
     const isPlot = project.subtype.toLowerCase().includes('plot') || input.unitType.toLowerCase().includes('plot');
@@ -308,7 +322,7 @@ class ProjectService {
     }
 
     const existing = await PropertyUnit.findOne({
-      organizationId,
+      organizationId: project.organizationId,
       projectId: project._id,
       unitNumber: input.unitNumber.trim(),
     });
@@ -319,7 +333,7 @@ class ProjectService {
 
     const unit = await PropertyUnit.create({
       ...input,
-      organizationId,
+      organizationId: project.organizationId,
       projectId: project._id,
       changeHistory: [],
     });
@@ -332,10 +346,11 @@ class ProjectService {
     projectId: string,
     unitId: string,
     input: UpdateUnitInput,
-    userId?: string
+    userId?: string,
+    isPlatformAdmin?: boolean
   ): Promise<IPropertyUnit> {
     const organizationId = this.toObjectId(orgId);
-    const unit = await this.getUnitById(organizationId, projectId, unitId);
+    const unit = await this.getUnitById(organizationId, projectId, unitId, isPlatformAdmin);
     const historyEntries: IUnitChangeHistory[] = [];
 
     // Track price change in changeHistory
@@ -403,10 +418,11 @@ class ProjectService {
   public async deleteUnit(
     orgId: Types.ObjectId | string,
     projectId: string,
-    unitId: string
+    unitId: string,
+    isPlatformAdmin?: boolean
   ): Promise<void> {
     const organizationId = this.toObjectId(orgId);
-    const unit = await this.getUnitById(organizationId, projectId, unitId);
+    const unit = await this.getUnitById(organizationId, projectId, unitId, isPlatformAdmin);
     await unit.deleteOne();
   }
 
@@ -414,10 +430,11 @@ class ProjectService {
     orgId: Types.ObjectId | string,
     projectId: string,
     userId?: string,
-    clientVersion?: number
+    clientVersion?: number,
+    isPlatformAdmin?: boolean
   ): Promise<{ project: IProject; isAlreadyReady: boolean }> {
     const organizationId = this.toObjectId(orgId);
-    const project = await this.getProjectById(organizationId, projectId);
+    const project = await this.getProjectById(organizationId, projectId, isPlatformAdmin);
 
     // 1. Optimistic Concurrency Check (409 on stale version)
     if (clientVersion !== undefined && clientVersion !== null) {
@@ -627,7 +644,7 @@ class ProjectService {
     };
 
     const updated = await Project.findOneAndUpdate(
-      { _id: project._id, organizationId },
+      { _id: project._id, organizationId: project.organizationId },
       {
         $set: {
           status: 'ready',

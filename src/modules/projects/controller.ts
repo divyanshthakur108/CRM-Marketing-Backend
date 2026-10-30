@@ -36,7 +36,8 @@ class ProjectController {
 
     const project = await projectService.getProjectById(
       req.membership.organizationId,
-      req.params.id
+      req.params.id,
+      req.user?.isPlatformAdmin
     );
 
     res.status(200).json({
@@ -69,7 +70,8 @@ class ProjectController {
     const project = await projectService.updateProject(
       req.membership.organizationId,
       req.params.id,
-      validated
+      validated,
+      req.user?.isPlatformAdmin
     );
 
     res.status(200).json({
@@ -84,7 +86,11 @@ class ProjectController {
       throw AppError.forbidden('Organization membership required');
     }
 
-    await projectService.deleteProject(req.membership.organizationId, req.params.id);
+    await projectService.deleteProject(
+      req.membership.organizationId,
+      req.params.id,
+      req.user?.isPlatformAdmin
+    );
 
     res.status(200).json({
       success: true,
@@ -99,7 +105,8 @@ class ProjectController {
 
     const sanitized = await projectService.getPublicAdProject(
       req.membership.organizationId,
-      req.params.id
+      req.params.id,
+      req.user?.isPlatformAdmin
     );
 
     res.status(200).json({
@@ -123,7 +130,8 @@ class ProjectController {
         status: status as string,
         unitType: unitType as string,
         search: search as string,
-      }
+      },
+      req.user?.isPlatformAdmin
     );
 
     res.status(200).json({
@@ -140,7 +148,8 @@ class ProjectController {
     const unit = await projectService.getUnitById(
       req.membership.organizationId,
       req.params.id,
-      req.params.unitId
+      req.params.unitId,
+      req.user?.isPlatformAdmin
     );
 
     res.status(200).json({
@@ -158,7 +167,8 @@ class ProjectController {
     const unit = await projectService.createUnit(
       req.membership.organizationId,
       req.params.id,
-      validated
+      validated,
+      req.user?.isPlatformAdmin
     );
 
     res.status(201).json({
@@ -179,7 +189,8 @@ class ProjectController {
       req.params.id,
       req.params.unitId,
       validated,
-      req.user?.userId
+      req.user?.userId,
+      req.user?.isPlatformAdmin
     );
 
     res.status(200).json({
@@ -197,7 +208,8 @@ class ProjectController {
     await projectService.deleteUnit(
       req.membership.organizationId,
       req.params.id,
-      req.params.unitId
+      req.params.unitId,
+      req.user?.isPlatformAdmin
     );
 
     res.status(200).json({
@@ -218,7 +230,8 @@ class ProjectController {
       req.membership.organizationId,
       req.params.id,
       userId,
-      version !== undefined && version !== null ? Number(version) : undefined
+      version !== undefined && version !== null ? Number(version) : undefined,
+      req.user?.isPlatformAdmin
     );
 
     res.status(200).json({

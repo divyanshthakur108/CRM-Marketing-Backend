@@ -192,11 +192,25 @@ export class AuthService {
         activeMembership.organizationId
       )) as IOrganization;
     } else {
-      // Platform admin without specific membership
-      organization = (await Organization.findOne()) || ({
-        _id: 'platform-root',
-        name: 'Platform Administration',
-      } as unknown as IOrganization);
+      // Platform admin without specific membership - resolve to existing or create default org
+      let defaultAdminOrg = (await Organization.findOne({ status: 'ACTIVE' })) || (await Organization.findOne());
+      if (!defaultAdminOrg) {
+        defaultAdminOrg = await Organization.create({
+          name: 'Platform Administration',
+          slug: 'platform-administration',
+          status: 'ACTIVE',
+          settings: {
+            currency: 'INR',
+            defaultTimezone: 'Asia/Kolkata',
+          },
+          onboarding: {
+            status: 'completed',
+            currentStep: 4,
+            data: {},
+          },
+        });
+      }
+      organization = defaultAdminOrg;
     }
 
     if (
@@ -423,7 +437,15 @@ export class AuthService {
       currentMembership = memberships[0];
     }
 
-    const activeOrg = currentMembership?.organizationId;
+    let activeOrg = currentMembership?.organizationId;
+    if (!activeOrg && user.isPlatformAdmin) {
+      const fallbackOrg =
+        (await Organization.findOne({ status: 'ACTIVE' }).sort({ createdAt: 1 })) ||
+        (await Organization.findOne().sort({ createdAt: 1 }));
+      if (fallbackOrg) {
+        activeOrg = fallbackOrg as unknown as typeof activeOrg;
+      }
+    }
 
     return {
       user: {
@@ -631,7 +653,13 @@ export class AuthService {
     const role = membership?.role || (user.isPlatformAdmin ? 'platform_admin' : 'viewer');
     const isValidOrgId =
       organization?._id && Types.ObjectId.isValid(organization._id.toString());
-    const orgId = isValidOrgId ? organization._id.toString() : 'platform-root';
+    let orgId = isValidOrgId ? organization._id.toString() : '';
+    if (!orgId) {
+      const fallbackOrg =
+        (await Organization.findOne({ status: 'ACTIVE' }).sort({ createdAt: 1 })) ||
+        (await Organization.findOne().sort({ createdAt: 1 }));
+      orgId = fallbackOrg ? fallbackOrg._id.toString() : 'platform-root';
+    }
 
     const accessToken = generateAccessToken({
       userId: user._id.toString(),
