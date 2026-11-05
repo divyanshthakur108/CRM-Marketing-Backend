@@ -7,7 +7,9 @@ import {
   GeneratedImageResult,
   ImageToVideoOptions,
   GeneratedVideoResult,
+  GenerateJsonOptions,
 } from './provider.interface.js';
+import { aiNotConfigured, toAiError } from '../../../utils/aiErrors.js';
 import { env, maskSecret } from '../../../config/env.js';
 import { logger } from '../../../config/logger.js';
 import { defaultStorage } from '../../../storage/localStorage.adapter.js';
@@ -43,6 +45,50 @@ export class GeminiAIProvider implements IAIProvider {
   }
 
   /**
+   * Runs a JSON-returning prompt (optionally with photos for vision) and parses the result.
+   */
+  public async generateJson<T = unknown>(prompt: string, options: GenerateJsonOptions = {}): Promise<T> {
+    const feature = options.feature || 'AI generation';
+    if (!this.isConfigured()) throw aiNotConfigured(feature);
+
+    const parts: Array<Record<string, unknown>> = (options.images || []).map((img) => ({
+      inlineData: { data: img.data.toString('base64'), mimeType: img.mimeType || 'image/jpeg' },
+    }));
+    parts.push({ text: prompt });
+
+    try {
+      const ai = this.getClient();
+      const response = await this.retryWithBackoff(() =>
+        ai.models.generateContent({
+          model: env.GEMINI_TEXT_MODEL,
+          contents: [{ role: 'user', parts }],
+          config: { responseMimeType: 'application/json' },
+        })
+      );
+      this.checkSafetyFeedback(response);
+      const parsed = this.parseJson(response.text || '');
+      if (parsed === null || parsed === undefined) {
+        throw new Error('Gemini returned an empty or non-JSON response');
+      }
+      return parsed as T;
+    } catch (err) {
+      throw toAiError(this.sanitizeError(err), feature);
+    }
+  }
+
+  private parseJson(text: string): any {
+    const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    if (!clean) return null;
+    try {
+      return JSON.parse(clean);
+    } catch {
+      const match = clean.match(/[\[{][\s\S]*[\]}]/);
+      if (!match) throw new Error('Gemini returned text that is not valid JSON');
+      return JSON.parse(match[0]);
+    }
+  }
+
+  /**
    * Health endpoint status (at most one check call)
    */
   public async checkHealth(): Promise<{
@@ -71,7 +117,7 @@ export class GeminiAIProvider implements IAIProvider {
       try {
         // One cheap check call: countTokens on a 1-word text
         await this.client.models.countTokens({
-          model: 'gemini-2.5-flash',
+          model: env.GEMINI_TEXT_MODEL,
           contents: 'health',
         });
         this.healthCached = true;
@@ -98,10 +144,7 @@ export class GeminiAIProvider implements IAIProvider {
    */
   public async generateCaption(data: CaptionPromptData): Promise<GeneratedCaptionResult> {
     if (!this.isConfigured()) {
-      throw AppError.badRequest(
-        'AI enhancement: not configured. Set GEMINI_API_KEY in backend/.env',
-        'AI_NOT_CONFIGURED'
-      );
+      throw aiNotConfigured();
     }
 
     const lang = data.language || 'English';
@@ -122,24 +165,26 @@ Output strict JSON with keys:
       const ai = this.getClient();
       const response = await this.retryWithBackoff(() =>
         ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: env.GEMINI_TEXT_MODEL,
           contents: prompt,
+          config: { responseMimeType: 'application/json' },
         })
       );
 
-      const text = response.text || '';
-      const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
+      const parsed = this.parseJson(response.text || '');
+      if (!parsed?.headline || !parsed?.caption) {
+        throw new Error('Gemini returned an incomplete caption (missing headline or caption)');
+      }
 
       return {
-        headline: parsed.headline || `Exclusive Residences at ${data.projectName}`,
-        caption: parsed.caption || `Discover luxury living at ${data.projectName}.`,
-        hashtags: parsed.hashtags || ['#LuxuryRealEstate', '#DreamHome'],
+        headline: String(parsed.headline),
+        caption: String(parsed.caption),
+        hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags.map(String) : [],
         language: lang,
-        model: 'gemini-2.5-flash',
+        model: env.GEMINI_TEXT_MODEL,
       };
     } catch (err) {
-      throw new Error(`Gemini caption generation error: ${this.sanitizeError(err)}`);
+      throw toAiError(this.sanitizeError(err), 'AI caption generation');
     }
   }
 
@@ -148,10 +193,7 @@ Output strict JSON with keys:
    */
   public async generateImage(options: GenerateImageOptions): Promise<GeneratedImageResult> {
     if (!this.isConfigured()) {
-      throw AppError.badRequest(
-        'AI enhancement: not configured. Set GEMINI_API_KEY in backend/.env',
-        'AI_NOT_CONFIGURED'
-      );
+      throw aiNotConfigured();
     }
 
     const aspectRatio = options.aspectRatio || '4:5';
@@ -250,11 +292,7 @@ Output strict JSON with keys:
         };
       }
     } catch (err: unknown) {
-      const msg = this.sanitizeError(err);
-      if (msg.includes('blocked by provider') || msg.toLowerCase().includes('safety')) {
-        throw AppError.badRequest(msg, 'AI_SAFETY_BLOCKED');
-      }
-      throw new Error(`Gemini Image API error: ${msg}`);
+      throw toAiError(this.sanitizeError(err), 'AI image generation');
     }
   }
 
@@ -263,10 +301,7 @@ Output strict JSON with keys:
    */
   public async imageToVideo(options: ImageToVideoOptions): Promise<GeneratedVideoResult> {
     if (!this.isConfigured()) {
-      throw AppError.badRequest(
-        'AI enhancement: not configured. Set GEMINI_API_KEY in backend/.env',
-        'AI_NOT_CONFIGURED'
-      );
+      throw aiNotConfigured();
     }
 
     let imageBuffer: Buffer | null = options.imageBuffer || null;
@@ -382,11 +417,7 @@ Output strict JSON with keys:
         isIllustrative: true,
       };
     } catch (err: unknown) {
-      const msg = this.sanitizeError(err);
-      if (msg.includes('blocked by provider') || msg.toLowerCase().includes('safety')) {
-        throw AppError.badRequest(msg, 'AI_SAFETY_BLOCKED');
-      }
-      throw new Error(`Gemini Video generation failed: ${msg}`);
+      throw toAiError(this.sanitizeError(err), 'AI video generation');
     }
   }
 
@@ -472,7 +503,7 @@ Output strict JSON with keys:
   private getClient(): GoogleGenAI {
     if (!this.client) {
       if (!this.isConfigured()) {
-        throw AppError.badRequest('GEMINI_API_KEY not configured in backend/.env', 'AI_NOT_CONFIGURED');
+        throw aiNotConfigured();
       }
       this.client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
     }
@@ -493,11 +524,13 @@ Output strict JSON with keys:
           errMsg.includes('429') ||
           errMsg.toLowerCase().includes('quota') ||
           errMsg.toLowerCase().includes('rate limit');
+        // Gemini is temporarily overloaded ("high demand", 503 UNAVAILABLE)
+        const isBusy = /"code":\s*503|UNAVAILABLE|overloaded|high demand/i.test(errMsg);
 
-        if (isRateLimit && attempt < maxRetries) {
+        if ((isRateLimit || isBusy) && attempt < maxRetries) {
           logger.warn(
-            { attempt, delay },
-            'Gemini API rate limit (429) hit. Backing off before retry...'
+            { attempt, delay, reason: isBusy ? 'busy' : 'rate-limit' },
+            'Gemini API busy or rate limited. Backing off before retry...'
           );
           await new Promise((r) => setTimeout(r, delay));
           delay *= 2;
@@ -532,7 +565,7 @@ Output strict JSON with keys:
 
   private async fetchImageBuffer(url: string): Promise<Buffer> {
     if (url.startsWith('/storage/')) {
-      const absPath = defaultStorage.getAbsolutePath(url.replace('/storage/', ''));
+      const absPath = await defaultStorage.ensureLocal(url.replace('/storage/', ''));
       return fs.readFile(absPath);
     }
     if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -541,7 +574,7 @@ Output strict JSON with keys:
       return Buffer.from(ab);
     }
     const cleanPath = url.replace(/^[/\\]+/, '');
-    const absPath = defaultStorage.getAbsolutePath(cleanPath);
+    const absPath = await defaultStorage.ensureLocal(cleanPath);
     return fs.readFile(absPath);
   }
 

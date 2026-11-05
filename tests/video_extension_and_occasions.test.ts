@@ -6,7 +6,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import bcrypt from 'bcryptjs';
 import path from 'path';
 import fs from 'fs/promises';
-import { spawn } from 'child_process';
+import { spawnMediaTool } from '../src/utils/ffmpeg.js';
 import sharp from 'sharp';
 import { createApp } from '../src/app.js';
 import {
@@ -198,7 +198,7 @@ describe('Video Extension, Occasion Campaigns, and Media Isolation (Conditions 1
     const ffmpegBin = creativeEngineService.resolveFfmpegBinary();
 
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(ffmpegBin, [
+      const proc = spawnMediaTool(ffmpegBin, [
         '-f', 'lavfi',
         '-i', 'testsrc=duration=2:size=1080x1920:rate=24',
         '-c:v', 'libx264',

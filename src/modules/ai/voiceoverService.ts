@@ -1,9 +1,10 @@
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawnMediaTool } from '../../utils/ffmpeg.js';
 import { getAllAudioBase64 } from 'google-tts-api';
 import { logger } from '../../config/logger.js';
+import { AppError } from '../../utils/AppError.js';
 
 export interface VoiceoverResult {
   filePath: string;
@@ -64,9 +65,9 @@ export class VoiceoverService {
   public async getAudioDuration(filePath: string): Promise<number> {
     const ffmpegBin = this.resolveFfmpegBinary();
     return new Promise((resolve) => {
-      const proc = spawn(ffmpegBin, ['-i', filePath]);
+      const proc = spawnMediaTool(ffmpegBin, ['-i', filePath]);
       let stderr = '';
-      proc.stderr.on('data', (d) => {
+      proc.stderr?.on('data', (d) => {
         stderr += d.toString();
       });
       proc.on('close', () => {
@@ -125,43 +126,15 @@ export class VoiceoverService {
         buffer: combinedBuffer,
       };
     } catch (err) {
-      logger.warn({ err }, '[VOICEOVER] Failed to synthesize live TTS audio, creating fallback audio');
-      // Create a 5-second silence/fallback audio buffer
-      const durationSeconds = 8.0;
-      await this.createFallbackAudio(outputFilePath, durationSeconds);
-      const buffer = await fs.readFile(outputFilePath).catch(() => Buffer.alloc(0));
-
-      return {
-        filePath: outputFilePath,
-        durationSeconds,
-        buffer,
-      };
+      logger.warn({ err }, '[VOICEOVER] Text-to-speech failed');
+      await fs.rm(outputFilePath, { force: true }).catch(() => {});
+      throw new AppError(
+        502,
+        'VOICEOVER_FAILED',
+        'Voiceover generation failed: the text-to-speech service could not be reached. Please try again.',
+        { providerMessage: err instanceof Error ? err.message : String(err) }
+      );
     }
-  }
-
-  /**
-   * Generates silent audio with ffmpeg if network is unavailable
-   */
-  private async createFallbackAudio(outputPath: string, durationSec: number): Promise<void> {
-    const ffmpegBin = this.resolveFfmpegBinary();
-    return new Promise((resolve) => {
-      const proc = spawn(ffmpegBin, [
-        '-f',
-        'lavfi',
-        '-i',
-        'anullsrc=r=44100:cl=stereo',
-        '-t',
-        durationSec.toString(),
-        '-q:a',
-        '9',
-        '-acodec',
-        'libmp3lame',
-        '-y',
-        outputPath,
-      ]);
-      proc.on('close', () => resolve());
-      proc.on('error', () => resolve());
-    });
   }
 }
 

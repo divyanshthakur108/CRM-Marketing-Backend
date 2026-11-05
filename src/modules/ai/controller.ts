@@ -17,7 +17,6 @@ import {
   RequestRevisionInput,
 } from './validation.js';
 import { getAIProvider, GeminiAIProvider } from './providers/index.js';
-import { env } from '../../config/env.js';
 import { OCCASIONS } from './occasionEngine.js';
 import { presenterWalkthroughService } from './presenterWalkthroughService.js';
 import { captionService } from './captionService.js';
@@ -26,22 +25,11 @@ import { aiStudioService } from './aiStudioService.js';
 export class AiController {
   public getAiHealth = async (_req: Request, res: Response): Promise<void> => {
     const provider = getAIProvider();
-    if (provider.name === 'gemini') {
-      const health = await (provider as GeminiAIProvider).checkHealth();
-      sendSuccess(res, health);
+    if (provider instanceof GeminiAIProvider) {
+      sendSuccess(res, { provider: 'gemini', ...(await provider.checkHealth()) });
       return;
     }
-
-    sendSuccess(res, {
-      configured: true,
-      provider: 'mock',
-      imageModel: 'mock-image-engine-v1',
-      videoModel: 'mock-video-engine-v1',
-      costPerImageUsd: 0,
-      costPerVideoSecondUsd: 0,
-      dailyCapUsd: env.AI_DAILY_COST_CAP_USD,
-      maxVideoSecondsPerReel: env.AI_MAX_VIDEO_SECONDS_PER_REEL,
-    });
+    sendSuccess(res, { provider: provider.name, configured: provider.isConfigured() });
   };
 
   public estimateCost = async (req: Request, res: Response): Promise<void> => {
@@ -104,9 +92,7 @@ export class AiController {
     const input = { ...(req.body as GenerateImageInput), organizationId: orgId };
     const result = await aiModuleService.generateImage(input);
     sendSuccess(res, result, 200, {
-      message: result.isMockFallback
-        ? 'Generated high-resolution architectural render via deterministic engine'
-        : 'Generated image successfully with Google Gemini AI',
+      message: 'Generated image successfully with Google Gemini AI',
     });
   };
 
@@ -609,20 +595,23 @@ export class AiController {
     const unit = unitId ? await PropertyUnit.findOne({ _id: unitId, organizationId }) : null;
     const details = (project.details || {}) as Record<string, any>;
 
+    // Only real project/unit data is passed; missing facts are left out rather than invented
     const result = await captionService.generateCaptions({
-      projectName: project.name || 'Luxury Residences',
+      projectName: project.name,
       category: project.category,
       subtype: project.subtype,
-      city: project.location?.city || details.city || 'Mohali',
-      state: project.location?.state || details.state || 'Punjab',
-      sectorOrLocation: details.sector || project.location?.address || 'Sector 66 / Airport Road',
-      bhk: unit?.unitType || details.bhk ? `${details.bhk} BHK` : '3 BHK',
-      areaSqFt: unit?.carpetAreaSqFt || unit?.superBuiltUpAreaSqFt || details.carpetAreaSqFt || '1850',
-      priceDisplay: unit?.price ? `₹ ${(unit.price / 10000000).toFixed(2)} Cr*` : details.priceRange || '₹ 1.25 Cr Onwards',
-      amenities: project.amenities || ['Clubhouse', 'Swimming Pool', 'Security'],
+      city: project.location?.city || details.city,
+      state: project.location?.state || details.state,
+      sectorOrLocation: details.sector || project.location?.microMarket || project.location?.address,
+      bhk: unit?.unitType || (details.bhk ? `${details.bhk} BHK` : undefined),
+      areaSqFt: unit?.carpetAreaSqFt || unit?.superBuiltUpAreaSqFt || details.carpetAreaSqFt,
+      priceDisplay: unit?.price
+        ? `₹ ${(unit.price / 10000000).toFixed(2)} Cr`
+        : project.priceRange?.display || details.priceRange,
+      amenities: project.amenities?.length ? project.amenities : undefined,
       reraNumber: project.reraNumber,
-      salesPhone: project.ownerContacts?.[0]?.phone || '+91 77103-80077',
-      salesOfficeName: project.ownerContacts?.[0]?.name || 'Experience Centre',
+      salesPhone: project.ownerContacts?.[0]?.phone,
+      salesOfficeName: project.ownerContacts?.[0]?.name,
       stylePreset: stylePreset || 'HERITAGE_LUXURY',
     });
 

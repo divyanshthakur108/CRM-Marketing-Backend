@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawnMediaTool } from '../../utils/ffmpeg.js';
 import { Creative, ICreative, ICreativeFile } from '../../models/Creative.js';
 import { Project, IProject } from '../../models/Project.js';
 import { PropertyUnit, IPropertyUnit } from '../../models/PropertyUnit.js';
@@ -33,6 +33,7 @@ import { logger } from '../../config/logger.js';
 import { env } from '../../config/env.js';
 import { getAIProvider } from './providers/index.js';
 import { AppError } from '../../utils/AppError.js';
+import { aiNotConfigured } from '../../utils/aiErrors.js';
 
 export interface EnqueueResult {
   success: boolean;
@@ -101,7 +102,7 @@ export class CreativeEngineService {
     const binary = this.resolveFfmpegBinary();
     return new Promise((resolve) => {
       try {
-        const proc = spawn(binary, ['-version'], { stdio: 'ignore' });
+        const proc = spawnMediaTool(binary, ['-version']);
         proc.on('error', () => resolve(false));
         proc.on('exit', (code) => resolve(code === 0));
       } catch {
@@ -337,7 +338,7 @@ export class CreativeEngineService {
     const factsSnapshot: Record<string, string> = {
       projectName: posterData.projectName,
       unitType: posterData.unitType || project.category,
-      location: [posterData.city, posterData.state].filter(Boolean).join(', ') || 'Prime Location',
+      location: [posterData.city, posterData.state].filter(Boolean).join(', '),
       price: posterData.priceDisplay || '',
       contactPhone: posterData.phone || '',
       amenities: project.amenities?.slice(0, 3).join(' • ') || '',
@@ -370,7 +371,7 @@ export class CreativeEngineService {
 
       await defaultStorage.saveBuffer(pngKey, pngBuffer);
       await defaultStorage.saveBuffer(jpgKey, jpegBuffer);
-      const url = `/storage/${pngKey}`;
+      const url = defaultStorage.getUrl(pngKey);
 
       posterFiles.push({
         ratio: r.ratio,
@@ -413,7 +414,7 @@ export class CreativeEngineService {
       approvalStatus: 'PENDING_APPROVAL',
       version: 1,
       headline: `${project.name} - ${posterData.unitType || 'Showcase'} Poster Set`,
-      caption: `${posterData.unitType || 'Showcase'} at ${project.name}, ${posterData.city || 'Prime Location'}. ${posterData.priceDisplay ? 'Price: ' + posterData.priceDisplay + '. ' : ''}Book site visit.`,
+      caption: `${posterData.unitType || 'Showcase'} at ${project.name}, ${posterData.city}. ${posterData.priceDisplay ? 'Price: ' + posterData.priceDisplay + '. ' : ''}Book site visit.`,
       hashtags: [`#${project.name.replace(/\s+/g, '')}`, `#RealEstate`, `#${(posterData.unitType || 'Property').replace(/\s+/g, '')}`],
       history: [
         {
@@ -604,7 +605,7 @@ export class CreativeEngineService {
   private async loadImageBuffer(mediaAsset: IMediaAsset): Promise<Buffer> {
     if (mediaAsset.storageKey) {
       try {
-        const localPath = defaultStorage.getAbsolutePath(mediaAsset.storageKey);
+        const localPath = await defaultStorage.ensureLocal(mediaAsset.storageKey);
         if (fsSync.existsSync(localPath)) {
           return await fs.readFile(localPath);
         }
@@ -625,17 +626,10 @@ export class CreativeEngineService {
       }
     }
 
-    // Fallback: Create high-resolution dark architectural gradient canvas
-    return sharp({
-      create: {
-        width: 1080,
-        height: 1080,
-        channels: 4,
-        background: { r: 18, g: 24, b: 38, alpha: 1 },
-      },
-    })
-      .png()
-      .toBuffer();
+    throw AppError.notFound(
+      `Photo "${mediaAsset.filename || mediaAsset._id}" could not be loaded from storage. Re-upload it and try again.`,
+      'MEDIA_FILE_MISSING'
+    );
   }
 
   /**
@@ -716,7 +710,7 @@ export class CreativeEngineService {
     logger.info({ args: [binary, ...args].join(' ') }, '[REEL-DIAG] extractPosterFrame ffmpeg command');
 
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(binary, args);
+      const proc = spawnMediaTool(binary, args);
       let stderr = '';
       proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
       proc.on('error', reject);
@@ -726,7 +720,8 @@ export class CreativeEngineService {
       });
     });
 
-    return `/storage/${posterStorageKey}`;
+    await defaultStorage.persist(posterStorageKey);
+    return defaultStorage.getUrl(posterStorageKey);
   }
 
   /**
@@ -743,7 +738,7 @@ export class CreativeEngineService {
     ];
     try {
       const result = await new Promise<string>((resolve, reject) => {
-        const proc = spawn(ffprobeBinary, args);
+        const proc = spawnMediaTool(ffprobeBinary, args);
         let out = '';
         proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
         proc.on('error', reject);
@@ -938,7 +933,7 @@ export class CreativeEngineService {
 
     // ── 5. Execute ffmpeg ────────────────────────────────────────────────
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(binary, args);
+      const proc = spawnMediaTool(binary, args);
       let stderr = '';
       proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
       proc.on('error', reject);
@@ -972,8 +967,9 @@ export class CreativeEngineService {
       // ignore
     }
 
+    await defaultStorage.persist(storageKey);
     return {
-      url: `/storage/${storageKey}`,
+      url: defaultStorage.getUrl(storageKey),
       storageKey,
       posterFrameUrl,
     };
@@ -1023,7 +1019,7 @@ export class CreativeEngineService {
     const factsSnapshot = creative.factsSnapshot || {
       projectName: project?.name || 'Luxury Property',
       unitType: 'Residential',
-      location: project?.location?.city || 'Prime Location',
+      location: project?.location?.city || '',
       price: project?.priceRange?.display || '',
       contactPhone: project?.ownerContacts?.[0]?.phone || '',
       cta: 'BOOK SITE VISIT',
@@ -1154,7 +1150,7 @@ export class CreativeEngineService {
 
       posterFiles.push({
         ratio: r.ratio,
-        url: `/storage/${pngKey}`,
+        url: defaultStorage.getUrl(pngKey),
         storageKey: pngKey,
         mimeType: 'image/png',
       });
@@ -1169,7 +1165,7 @@ export class CreativeEngineService {
 
     const fullFactsSnapshot: Record<string, any> = {
       ...posterData,
-      location: [posterData.city, posterData.state].filter(Boolean).join(', ') || 'Prime Location',
+      location: [posterData.city, posterData.state].filter(Boolean).join(', '),
       amenities: project.amenities?.slice(0, 3).join(' • ') || '',
       cta: 'BOOK SITE VISIT',
     };
@@ -1457,11 +1453,8 @@ export class CreativeEngineService {
 
     // 1. Provider configuration verification
     const provider = getAIProvider();
-    if (provider.name === 'gemini' && !provider.isConfigured()) {
-      throw AppError.badRequest(
-        'AI enhancement: not configured. Please set GEMINI_API_KEY in backend/.env',
-        'AI_NOT_CONFIGURED'
-      );
+    if (!provider.isConfigured()) {
+      throw aiNotConfigured();
     }
 
     // 2. Query approved media assets (4 to 5 photos)
@@ -1582,81 +1575,26 @@ export class CreativeEngineService {
         const clipPath = path.join(tempDir, `clip_${i}.mp4`);
         const photoBuf = await this.loadImageBuffer(photo);
 
-        let clipGenerated = false;
-
-        // Try AI video generation with provider
-        if (provider.isConfigured() && env.AI_PROVIDER === 'gemini') {
-          try {
-            logger.info({ index: i, photoId: photo._id }, 'Generating Gemini Veo clip for photo');
-            const videoResult = await provider.imageToVideo({
-              imageBuffer: photoBuf,
-              durationSeconds: 4,
-              aspectRatio: '9:16',
-              sceneIndex: i,
-            });
-
-            // If provider returned video file, copy to clipPath
-            if (videoResult.storageKey) {
-              const absVid = defaultStorage.getAbsolutePath(videoResult.storageKey);
-              await fs.copyFile(absVid, clipPath);
-              clipPaths.push(clipPath);
-              scenes.push({ photoId: photo._id.toString(), mode: 'ai_animated' });
-              clipGenerated = true;
-            }
-          } catch (clipErr: any) {
-            logger.warn(
-              { err: clipErr.message, photoId: photo._id },
-              'Clip generation failed or blocked by provider; falling back to template motion'
-            );
-            scenes.push({
-              photoId: photo._id.toString(),
-              mode: 'template_fallback',
-              reason: clipErr.message || 'Safety blocked or provider timeout',
-            });
-          }
+        // Real AI clip only. If Gemini can't animate a photo, the whole reel fails with a clear reason.
+        logger.info({ index: i, photoId: photo._id }, 'Generating Gemini Veo clip for photo');
+        const videoResult = await provider.imageToVideo({
+          imageBuffer: photoBuf,
+          durationSeconds: 4,
+          aspectRatio: '9:16',
+          sceneIndex: i,
+        });
+        if (!videoResult.storageKey) {
+          throw new AppError(502, 'AI_FAILED', 'AI video generation returned no clip. Please try again.');
         }
-
-        // Fallback: If not generated by AI, create smooth 5-second Ken Burns push-in from the real photo
-        if (!clipGenerated) {
-          const imgJpg = path.join(tempDir, `input_${i}.jpg`);
-          await sharp(photoBuf)
-            .resize(1080, 1920, { fit: 'cover', position: 'center' })
-            .jpeg({ quality: 90 })
-            .toFile(imgJpg);
-
-          const ffmpegArgs = [
-            '-loop', '1',
-            '-i', imgJpg,
-            '-t', '4',
-            '-vf', "scale=1080:1920,zoompan=z='min(zoom+0.0015,1.15)':d=96:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=24",
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-pix_fmt', 'yuv420p',
-            '-r', '24',
-            '-an',
-            '-y',
-            clipPath,
-          ];
-
-          await new Promise<void>((resolve, reject) => {
-            const proc = spawn(binary, ffmpegArgs);
-            proc.on('error', reject);
-            proc.on('exit', (code) => {
-              if (code === 0) resolve();
-              else reject(new Error(`ffmpeg clip fallback failed with code ${code}`));
-            });
-          });
-
-          clipPaths.push(clipPath);
-          if (scenes.length <= i) {
-            scenes.push({ photoId: photo._id.toString(), mode: 'template_fallback' });
-          }
-        }
+        const absVid = await defaultStorage.ensureLocal(videoResult.storageKey);
+        await fs.copyFile(absVid, clipPath);
+        clipPaths.push(clipPath);
+        scenes.push({ photoId: photo._id.toString(), mode: 'ai_animated' });
       }
 
       // 9. Concat all clips with exact RERA text overlays and typewriter CTA
       const concatListFile = path.join(tempDir, 'concat_list.txt');
-      const concatContent = clipPaths.map((p) => `file '${p.replace(/\\/g, '/')}'`).join('\n');
+      const concatContent = clipPaths.map((p) => `file '${path.relative(tempDir, p).replace(/\\/g, '/')}'`).join('\n');
       await fs.writeFile(concatListFile, concatContent, 'utf-8');
 
       // Resolve Facts
@@ -1664,7 +1602,7 @@ export class CreativeEngineService {
       const facts = params.factsSnapshot || {
         projectName: project?.name || 'Exclusive Living',
         unitType: 'Luxury Residences',
-        location: project?.location?.city || 'Prime Location',
+        location: project?.location?.city || '',
         price: project?.priceRange?.display || '',
         contactPhone: project?.ownerContacts?.[0]?.phone || '',
         cta: 'SCHEDULE SITE VISIT',
@@ -1714,7 +1652,7 @@ export class CreativeEngineService {
       assembleArgs.push('-y', outputFilePath);
 
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(binary, assembleArgs);
+        const proc = spawnMediaTool(binary, assembleArgs);
         proc.on('error', reject);
         proc.on('exit', (code) => {
           if (code === 0) resolve();
@@ -1738,6 +1676,8 @@ export class CreativeEngineService {
         // ignore
       }
 
+      await defaultStorage.persist(storageKey);
+
       // 10. Persist Creative Record labeled "AI-animated · Illustrative"
       const creative = await Creative.create({
         _id: creativeId,
@@ -1746,12 +1686,12 @@ export class CreativeEngineService {
         unitId,
         type: 'REEL',
         format: '9:16',
-        renderedAssetUrl: `/storage/${storageKey}`,
+        renderedAssetUrl: defaultStorage.getUrl(storageKey),
         posterFrameUrl: posterFrameUrl || undefined,
         files: [
           {
             ratio: '9:16',
-            url: `/storage/${storageKey}`,
+            url: defaultStorage.getUrl(storageKey),
             storageKey,
             mimeType: 'video/mp4',
           },
@@ -1773,8 +1713,8 @@ export class CreativeEngineService {
             headline: `${project?.name || 'Project'} - AI Motion Reel`,
             caption: 'AI motion reel synthesized from real property photography',
             hashtags: ['#AIMotionReel'],
-            renderedAssetUrl: `/storage/${storageKey}`,
-            files: [{ ratio: '9:16', url: `/storage/${storageKey}`, storageKey, mimeType: 'video/mp4' }],
+            renderedAssetUrl: defaultStorage.getUrl(storageKey),
+            files: [{ ratio: '9:16', url: defaultStorage.getUrl(storageKey), storageKey, mimeType: 'video/mp4' }],
             sourceAssetIds: selectedPhotos.map((p) => p._id as Types.ObjectId),
             factsSnapshot: facts,
             generatedBy: 'ai',
@@ -1799,7 +1739,7 @@ export class CreativeEngineService {
           totalSeconds: estimate.totalSeconds,
         },
         result: {
-          url: `/storage/${storageKey}`,
+          url: defaultStorage.getUrl(storageKey),
           storageKey,
           scenes,
         },
@@ -1846,11 +1786,8 @@ export class CreativeEngineService {
     const mediaAssetId = this.toObjectId(params.mediaAssetId);
 
     const provider = getAIProvider();
-    if (provider.name === 'gemini' && !provider.isConfigured()) {
-      throw AppError.badRequest(
-        'AI enhancement: not configured. Please set GEMINI_API_KEY in backend/.env',
-        'AI_NOT_CONFIGURED'
-      );
+    if (!provider.isConfigured()) {
+      throw aiNotConfigured();
     }
 
     const asset = await MediaAsset.findOne({ _id: mediaAssetId, organizationId });
@@ -2041,7 +1978,7 @@ export class CreativeEngineService {
     await fs.mkdir(tempDir, { recursive: true });
 
     try {
-      const videoAbsPath = defaultStorage.getAbsolutePath(mediaAsset.storageKey);
+      const videoAbsPath = await defaultStorage.ensureLocal(mediaAsset.storageKey);
       if (!fsSync.existsSync(videoAbsPath)) {
         throw AppError.notFound('Original video file not found in storage');
       }
@@ -2054,7 +1991,7 @@ export class CreativeEngineService {
       const lastFramePath = path.join(tempDir, 'last_frame.jpg');
 
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(binary, [
+        const proc = spawnMediaTool(binary, [
           '-ss', String(lastFrameTime),
           '-i', videoAbsPath,
           '-frames:v', '1',
@@ -2078,60 +2015,19 @@ export class CreativeEngineService {
 
       const provider = getAIProvider();
       const continuationClipPath = path.join(tempDir, 'continuation.mp4');
-      let clipGenerated = false;
 
-      // 5. Generate continuation using AI provider (or template fallback)
-      if (provider.isConfigured && provider.isConfigured()) {
-        try {
-          const videoResult = await provider.imageToVideo({
-            imageBuffer: lastFrameBuffer,
-            durationSeconds: params.durationSeconds || 4,
-            aspectRatio: '9:16',
-            motionPrompt,
-          });
-
-          if (videoResult.storageKey) {
-            const absVid = defaultStorage.getAbsolutePath(videoResult.storageKey);
-            if (fsSync.existsSync(absVid)) {
-              await fs.copyFile(absVid, continuationClipPath);
-              clipGenerated = true;
-            }
-          }
-        } catch (aiErr: any) {
-          logger.warn({ err: aiErr.message }, 'AI provider video extension fell back to smooth local continuation');
-        }
+      // 5. Generate the continuation with AI. No local stand-in: failures surface as clear AI errors.
+      const videoResult = await provider.imageToVideo({
+        imageBuffer: lastFrameBuffer,
+        durationSeconds: params.durationSeconds || 4,
+        aspectRatio: '9:16',
+        motionPrompt,
+      });
+      const absVid = videoResult.storageKey ? await defaultStorage.ensureLocal(videoResult.storageKey) : '';
+      if (!absVid || !fsSync.existsSync(absVid)) {
+        throw new AppError(502, 'AI_FAILED', 'AI video extension returned no clip. Please try again.');
       }
-
-      if (!clipGenerated) {
-        // Fallback: smooth 4-second forward push-in from last frame
-        await sharp(lastFrameBuffer)
-          .resize(1080, 1920, { fit: 'cover', position: 'center' })
-          .jpeg({ quality: 90 })
-          .toFile(lastFramePath);
-
-        const ffmpegArgs = [
-          '-loop', '1',
-          '-i', lastFramePath,
-          '-t', '4',
-          '-vf', "scale=1080:1920,zoompan=z='min(zoom+0.0018,1.20)':d=96:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=24",
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-pix_fmt', 'yuv420p',
-          '-r', '24',
-          '-an',
-          '-y',
-          continuationClipPath,
-        ];
-
-        await new Promise<void>((resolve, reject) => {
-          const proc = spawn(binary, ffmpegArgs);
-          proc.on('error', reject);
-          proc.on('exit', (code) => {
-            if (code === 0) resolve();
-            else reject(new Error(`ffmpeg continuation fallback failed with code ${code}`));
-          });
-        });
-      }
+      await fs.copyFile(absVid, continuationClipPath);
 
       // 6. Stitch original video + continuation video with ffmpeg
       const creativeId = new Types.ObjectId();
@@ -2155,7 +2051,7 @@ export class CreativeEngineService {
       ];
 
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(binary, concatArgs);
+        const proc = spawnMediaTool(binary, concatArgs);
         proc.on('error', reject);
         proc.on('exit', (code) => {
           if (code === 0) resolve();
@@ -2172,6 +2068,8 @@ export class CreativeEngineService {
         logger.warn({ e }, 'Poster frame extraction failed for extended video');
       }
 
+      await defaultStorage.persist(storageKey);
+
       // 8. Persist Creative Record
       const creative = await Creative.create({
         _id: creativeId,
@@ -2180,12 +2078,12 @@ export class CreativeEngineService {
         type: 'REEL',
         format: '9:16',
         extensionType: 'AI_CONTINUATION',
-        renderedAssetUrl: `/storage/${storageKey}`,
+        renderedAssetUrl: defaultStorage.getUrl(storageKey),
         posterFrameUrl: posterFrameUrl || undefined,
         files: [
           {
             ratio: '9:16',
-            url: `/storage/${storageKey}`,
+            url: defaultStorage.getUrl(storageKey),
             storageKey,
             mimeType: 'video/mp4',
           },
@@ -2194,7 +2092,7 @@ export class CreativeEngineService {
         factsSnapshot: {
           projectName: project.name,
           unitType: 'Walkthrough Extension',
-          location: project.location?.city || 'Prime Location',
+          location: project.location?.city || '',
           price: project.priceRange?.display || 'Price on request',
           contactPhone: project.ownerContacts?.[0]?.phone || '',
           cta: 'SCHEDULE SITE VISIT',
@@ -2220,7 +2118,7 @@ export class CreativeEngineService {
 
       return {
         creative,
-        extendedUrl: `/storage/${storageKey}`,
+        extendedUrl: defaultStorage.getUrl(storageKey),
         planItem,
         notification,
       };
@@ -2306,7 +2204,7 @@ export class CreativeEngineService {
 
       posterFiles.push({
         ratio: r.ratio,
-        url: `/storage/${pngKey}`,
+        url: defaultStorage.getUrl(pngKey),
         storageKey: pngKey,
         mimeType: 'image/png',
       });
@@ -2331,17 +2229,17 @@ export class CreativeEngineService {
       factsSnapshot: {
         ...posterData,
         occasion: occasionCfg.name,
-        offer: params.customOffer || occasionCfg.defaultOffer,
-        location: [posterData.city, posterData.state].filter(Boolean).join(', ') || 'Prime Location',
+        offer: params.customOffer || undefined,
+        location: [posterData.city, posterData.state].filter(Boolean).join(', '),
       },
-      generatedBy: 'ai',
+      generatedBy: 'template',
       isIllustrative: !selectedPhotos.isAllActual,
       cost: 1,
       status: 'ready_for_review',
       approvalStatus: 'PENDING_APPROVAL',
       version: 1,
       headline: `${project.name} - ${occasionCfg.name} Poster Set`,
-      caption: `${occasionCfg.greetingHeadline}. Celebrate with ${project.name} in ${posterData.city}. ${params.customOffer || occasionCfg.defaultOffer}.`,
+      caption: `${occasionCfg.greetingHeadline}. Celebrate with ${project.name}${posterData.city ? ` in ${posterData.city}` : ""}. ${params.customOffer ? `${params.customOffer}.` : ''}`,
       hashtags: [`#${project.name.replace(/\s+/g, '')}`, `#${occasionCfg.key.toUpperCase()}`, '#FestiveLiving', '#LuxuryHomes'],
     });
 
@@ -2391,14 +2289,14 @@ export class CreativeEngineService {
         ...posterData,
         occasion: occasionCfg.name,
       },
-      generatedBy: 'ai',
+      generatedBy: 'template',
       isIllustrative: false,
       cost: 1,
       status: 'ready_for_review',
       approvalStatus: 'PENDING_APPROVAL',
       version: 1,
       headline: `${project.name} - ${occasionCfg.name} Reel`,
-      caption: `Festive celebration at ${project.name}. ${occasionCfg.tagline}. Official RERA Credentials.`,
+      caption: `Festive celebration at ${project.name}. ${occasionCfg.tagline}.${project.reraNumber ? ` RERA: ${project.reraNumber}.` : ''}`,
       hashtags: [`#${project.name.replace(/\s+/g, '')}`, `#${occasionCfg.key.toUpperCase()}`, '#FestiveReel'],
     });
 

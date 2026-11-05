@@ -34,13 +34,14 @@ export class MockWhatsAppAdapter implements IWhatsAppAdapter {
     signatureHeader?: string,
     secret?: string
   ): boolean {
-    const appSecret =
-      secret || process.env.META_APP_SECRET || 'realcrm_meta_webhook_secret_2026';
+    const appSecret = secret || process.env.META_APP_SECRET;
 
     if (!signatureHeader) {
-      if (process.env.NODE_ENV === 'test' || process.env.WHATSAPP_ADAPTER === 'mock') {
-        return true;
-      }
+      // Only the automated test suite may send unsigned webhooks
+      return process.env.NODE_ENV === 'test';
+    }
+    if (!appSecret) {
+      // Without the real app secret no signature can be trusted
       return false;
     }
 

@@ -1,3 +1,6 @@
+import { setAIProviderOverride } from '../src/modules/ai/providers/index.js';
+import { aiNotConfigured } from '../src/utils/aiErrors.js';
+import { MockAIProvider } from './fakes/fakeAIProvider.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { Express } from 'express';
@@ -176,7 +179,7 @@ describe('Dual-Style Posters, 5-Step Captions & Presenter Walkthrough Video', ()
       expect(script.acts[0].actNumber).toBe(1);
       expect(script.acts[0].speech.length).toBeGreaterThan(20);
       expect(script.acts[0].lowerThird.headline).toBeTruthy();
-      expect(script.acts[1].actTitle).toContain('Living');
+      expect(script.acts[1].targetRoom).toBe('LIVING');
       expect(script.headline).toBeTruthy();
       expect(script.caption).toBeTruthy();
       expect(script.hashtags.length).toBeGreaterThan(0);
@@ -199,17 +202,40 @@ describe('Dual-Style Posters, 5-Step Captions & Presenter Walkthrough Video', ()
 
       const luxury = captions.variants.find((v) => v.style === 'HERITAGE_LUXURY');
       expect(luxury).toBeDefined();
-      expect(luxury!.hook).toContain('Welcome to The Grand Residency');
-      expect(luxury!.legalAndHashtags).toContain('PBRERA-SAS80-PR0912');
-      expect(luxury!.fullCopy).toContain('PBRERA');
+      expect(luxury!.hook).toContain('The Grand Residency');
+      expect(luxury!.fullCopy).toContain(luxury!.hook);
+      expect(captions.variants.find((v) => v.style === 'HIGH_GROWTH_ROI')).toBeDefined();
+      expect(captions.variants.find((v) => v.style === 'SHORT_REEL')).toBeDefined();
+    });
 
-      const roi = captions.variants.find((v) => v.style === 'HIGH_GROWTH_ROI');
-      expect(roi).toBeDefined();
-      expect(roi!.hook).toContain('HIGH ROI');
-
-      const reel = captions.variants.find((v) => v.style === 'SHORT_REEL');
-      expect(reel).toBeDefined();
-      expect(reel!.cta).toContain('DM');
+    it('fails with a clear AI error instead of returning template copy when AI is unavailable', async () => {
+      const failing = {
+        name: 'failing',
+        isConfigured: () => false,
+        generateJson: async () => {
+          throw aiNotConfigured('AI caption writing');
+        },
+        generateCaption: async () => {
+          throw aiNotConfigured();
+        },
+        generateImage: async () => {
+          throw aiNotConfigured();
+        },
+        imageToVideo: async () => {
+          throw aiNotConfigured();
+        },
+      };
+      setAIProviderOverride(failing);
+      try {
+        await expect(captionService.generateCaptions({ projectName: 'Any Project' })).rejects.toMatchObject({
+          code: 'AI_NOT_CONFIGURED',
+        });
+        await expect(presenterScriptService.generateScript({ projectName: 'Any Project' })).rejects.toMatchObject({
+          code: 'AI_NOT_CONFIGURED',
+        });
+      } finally {
+        setAIProviderOverride(new MockAIProvider());
+      }
     });
   });
 

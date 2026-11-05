@@ -29,9 +29,11 @@ import { analyticsRouter } from './modules/analytics/routes.js';
 import { whatsAppRouter } from './modules/whatsapp/routes.js';
 import { appointmentRouter } from './modules/appointments/routes.js';
 import adminRouter from './modules/admin/routes.js';
+import videoLabRouter from './modules/videolab/routes.js';
 import onboardingRouter from './modules/onboarding/routes.js';
 import notificationsRouter from './modules/notifications/routes.js';
 import path from 'path';
+import { defaultStorage } from './storage/localStorage.adapter.js';
 
 export const createApp = (): Express => {
   const app = express();
@@ -88,7 +90,18 @@ export const createApp = (): Express => {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   // 6. Static File Storage
+  // Files saved by this machine are served from disk; anything else redirects to Cloudinary.
   app.use('/storage', express.static(path.resolve(process.cwd(), 'storage')));
+  if (defaultStorage.isCloudinary) {
+    app.get('/storage/*', (req, res) => {
+      const key = decodeURIComponent(req.path.replace(/^\/+/, ''));
+      try {
+        res.redirect(302, defaultStorage.getUrl(key));
+      } catch {
+        res.status(400).end();
+      }
+    });
+  }
 
   // 7. Global API Rate Limiter
   app.use('/api', apiRateLimiter);
@@ -112,6 +125,7 @@ export const createApp = (): Express => {
   app.use('/api/v1/analytics', analyticsRouter);
   app.use('/api/v1/conversations', whatsAppRouter);
   app.use('/api/v1/appointments', appointmentRouter);
+  app.use('/api/v1/admin/video-lab', videoLabRouter);
   app.use('/api/v1/admin/organizations', adminRouter);
   app.use('/api/v1/onboarding', onboardingRouter);
   app.use('/api/v1/notifications', notificationsRouter);

@@ -43,12 +43,13 @@ export class MetaWebhookService {
    * Verifies the X-Hub-Signature-256 header sent by Meta
    */
   verifySignature(rawBody: string | Buffer, signatureHeader?: string, secret?: string): boolean {
-    const appSecret = secret || process.env.META_APP_SECRET || 'realcrm_meta_webhook_secret_2026';
+    const appSecret = secret || process.env.META_APP_SECRET;
     if (!signatureHeader) {
-      // In dev/test mode with no header provided
-      if (process.env.NODE_ENV === 'test' || process.env.META_ADAPTER === 'mock') {
-        return true;
-      }
+      // Only the automated test suite may send unsigned webhooks
+      return process.env.NODE_ENV === 'test';
+    }
+    if (!appSecret) {
+      // Without the real app secret no signature can be trusted
       return false;
     }
 

@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { Express } from 'express';
@@ -171,6 +172,16 @@ describe('Auto Creative Generation (Poster + Reel & Review Flow)', () => {
     });
 
     // 4. Approved Media Assets with confirmed rights consent
+    // Real image files for the media records (the app no longer substitutes blank placeholders)
+    for (const name of ['hero-facade.jpg', 'living-room.jpg', 'unapproved-draft.jpg']) {
+      const jpg = await sharp({
+        create: { width: 1200, height: 900, channels: 3, background: '#8a9bb0' },
+      })
+        .jpeg()
+        .toBuffer();
+      await defaultStorage.saveBuffer(`projects/${projectA._id}/${name}`, jpg);
+    }
+
     heroMediaA = await MediaAsset.create({
       organizationId: orgA._id,
       projectId: projectA._id,

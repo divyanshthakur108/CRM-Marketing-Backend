@@ -17,7 +17,6 @@ export interface OccasionConfig {
   badgeBackground: string;
   badgeBorder: string;
   badgeTextColor: string;
-  defaultOffer: string;
   lowerThirdText: string;
   iconSvgSymbol: string;
 }
@@ -28,15 +27,14 @@ export const OCCASIONS: Record<string, OccasionConfig> = {
     name: 'Diwali Festival of Lights',
     badge: '🪔 DIWALI FESTIVE PRIVILEGE',
     greetingHeadline: 'Illuminate Your Life in a Royal Abode',
-    subGreeting: 'Warmest Diwali Wishes from the GDPL Family',
+    subGreeting: 'Warmest Diwali Wishes to You and Your Family',
     tagline: 'This Auspicious Season, Own the Landmark You Deserve',
     accentColors: ['#D97706', '#F59E0B', '#78350F'],
     backgroundColors: ['#FFFBEB', '#FEF3C7', '#F8FAFC'],
     badgeBackground: '#FEF3C7',
     badgeBorder: '#F59E0B',
     badgeTextColor: '#92400E',
-    defaultOffer: '*Festive Diwali Offer: Zero Stamp Duty & Gold Coin on Spot Booking',
-    lowerThirdText: 'Warm Diwali Wishes · Celebrate in Luxury · Sector 91 Mohali',
+    lowerThirdText: 'Warm Diwali Wishes · Book a Site Visit',
     iconSvgSymbol: '🪔',
   },
   holi: {
@@ -45,13 +43,12 @@ export const OCCASIONS: Record<string, OccasionConfig> = {
     badge: '🎨 HOLI FESTIVAL SPECIAL',
     greetingHeadline: 'Add Vibrant Colors of Prosperity to Your Future',
     subGreeting: 'Wishing You and Your Loved Ones a Joyous Holi',
-    tagline: 'Step Into a Harmonious Community Surrounded by Greenery',
+    tagline: 'Add Colour to Your Life with a New Home',
     accentColors: ['#059669', '#10B981', '#047857'],
     backgroundColors: ['#ECFDF5', '#D1FAE5', '#F8FAFC'],
     badgeBackground: '#D1FAE5',
     badgeBorder: '#10B981',
     badgeTextColor: '#065F46',
-    defaultOffer: '*Spring Festival Benefit: Zero Documentation Charges on Spot Booking',
     lowerThirdText: 'Happy Holi · Vibrant Luxury Living · Book Site Visit Today',
     iconSvgSymbol: '🎨',
   },
@@ -61,14 +58,13 @@ export const OCCASIONS: Record<string, OccasionConfig> = {
     badge: '🇮🇳 INDEPENDENCE DAY PRIVILEGE',
     greetingHeadline: 'Celebrate the True Freedom of Expansive Luxury',
     subGreeting: 'Pride, Heritage and Regal Architecture',
-    tagline: 'Generous Balconies, Expansive Green Podiums & Open Vistas',
+    tagline: 'Celebrate Freedom with a Home of Your Own',
     accentColors: ['#EA580C', '#1E3A8A', '#16A34A'],
     backgroundColors: ['#FFF7ED', '#EFF6FF', '#F8FAFC'],
     badgeBackground: '#EFF6FF',
     badgeBorder: '#3B82F6',
     badgeTextColor: '#1E40AF',
-    defaultOffer: '*Freedom Subvention Scheme: Pay 20% Now, Rest on Handover',
-    lowerThirdText: 'Proudly Celebrating Freedom · Regal Living in Mohali',
+    lowerThirdText: 'Proudly Celebrating Freedom · Book a Site Visit',
     iconSvgSymbol: '🇮🇳',
   },
   new_year: {
@@ -77,13 +73,12 @@ export const OCCASIONS: Record<string, OccasionConfig> = {
     badge: '✨ NEW YEAR, NEW ADDRESS',
     greetingHeadline: 'Step Into a Grand Lifestyle This Year',
     subGreeting: 'Start Your New Chapter in Exceptional Comfort',
-    tagline: 'World-Class Amenities, Private Balconies & Iconic Towers',
+    tagline: 'Start the New Year in Your New Home',
     accentColors: ['#D97706', '#E2BA52', '#0F172A'],
     backgroundColors: ['#F8FAFC', '#F1F5F9', '#E2E8F0'],
     badgeBackground: '#FEF3C7',
     badgeBorder: '#D97706',
     badgeTextColor: '#78350F',
-    defaultOffer: '*New Year Privilege: Imported Modular Kitchen Package Included',
     lowerThirdText: 'A New Milestone in Luxury · Schedule Private Tour',
     iconSvgSymbol: '✨',
   },
@@ -93,13 +88,12 @@ export const OCCASIONS: Record<string, OccasionConfig> = {
     badge: '🌧️ MONSOON LIVING SPECIAL',
     greetingHeadline: 'Wake Up to Rain-Washed Panoramic Balcony Views',
     subGreeting: 'Breathe Fresh Nature Across Landscaped Podium Parks',
-    tagline: 'Expansive Deck Balconies Overlooking Sector 91 & 114 Mohali',
+    tagline: 'Enjoy the Monsoon in Your New Home',
     accentColors: ['#0D9488', '#0284C7', '#0369A1'],
     backgroundColors: ['#F0FDFA', '#E0F2FE', '#F8FAFC'],
     badgeBackground: '#CCFBF1',
     badgeBorder: '#14B8A6',
     badgeTextColor: '#115E59',
-    defaultOffer: '*Monsoon Special: Priority High-Floor Inventory Allocation',
     lowerThirdText: 'Lush Balcony Living · Rain-Washed Green Views · Book Visit',
     iconSvgSymbol: '🌧️',
   },
@@ -109,14 +103,13 @@ export const OCCASIONS: Record<string, OccasionConfig> = {
     badge: '🔥 LIMITED TIME FESTIVE PRIVILEGE',
     greetingHeadline: 'A Rare Opportunity to Own an Iconic Landmark Residence',
     subGreeting: 'Exclusive Limited-Inventory Booking Scheme',
-    tagline: 'Immediate Possession Available on Select Towers & Configurations',
+    tagline: 'Ask Our Sales Team About Current Offers',
     accentColors: ['#DC2626', '#EA580C', '#7F1D1D'],
     backgroundColors: ['#FEF2F2', '#FEE2E2', '#F8FAFC'],
     badgeBackground: '#FEE2E2',
     badgeBorder: '#EF4444',
     badgeTextColor: '#991B1B',
-    defaultOffer: '*Festive Privilege: Guaranteed Inaugural Price Lock on First 10 Bookings',
-    lowerThirdText: 'Exclusive Festive Pricing · Verified RERA Credentials · Call Now',
+    lowerThirdText: 'Talk to Our Sales Team · Call Now',
     iconSvgSymbol: '🔥',
   },
 };
@@ -237,7 +230,8 @@ export async function renderOccasionPoster(params: {
   const [bgTop, bgMid, bgBottom] = occasion.backgroundColors;
   const [accent1, accent2, darkTone] = occasion.accentColors;
 
-  const offerText = customOffer || occasion.defaultOffer;
+  // Offers are printed only when the client provided one; otherwise the occasion tagline is shown
+  const offerText = customOffer?.trim() || occasion.tagline;
 
   const bgSvg = `
     <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
@@ -281,7 +275,15 @@ export async function renderOccasionPoster(params: {
           ${escapeXml(occasion.greetingHeadline)}
         </text>
         <text x="${contentWidth / 2}" y="104" font-family="'Inter', -apple-system, sans-serif" font-size="12" font-weight="500" fill="#64748B" text-anchor="middle">
-          ${escapeXml(data.city || 'Mohali')}, ${escapeXml(data.state || 'Punjab')} • ${escapeXml(data.unitType || 'Luxury')} ${escapeXml(data.category || 'RESIDENTIAL')} • ${data.areaSqFt ? escapeXml(String(data.areaSqFt)) + ' Sq. Ft.' : 'Spacious Layout'}
+          ${escapeXml(
+            [
+              [data.city, data.state].filter(Boolean).join(', '),
+              [data.unitType, data.category].filter(Boolean).join(' '),
+              data.areaSqFt ? `${data.areaSqFt} Sq. Ft.` : '',
+            ]
+              .filter(Boolean)
+              .join(' • ')
+          )}
         </text>
       </g>
     </svg>
@@ -311,7 +313,7 @@ export async function renderOccasionPoster(params: {
           ${escapeXml(data.priceDisplay || 'Price on Request')}
         </text>
         <text x="${contentWidth - 68}" y="44" font-family="'Inter', -apple-system, sans-serif" font-size="11" font-weight="600" fill="${occasion.badgeTextColor}" text-anchor="end">
-          *RERA Terms Apply
+          ${data.reraNumber ? '*T&amp;C Apply' : ''}
         </text>
 
         <!-- Festive Promotional Offer Note -->
@@ -324,12 +326,12 @@ export async function renderOccasionPoster(params: {
         <g transform="translate(16, 114)">
           <rect x="0" y="0" width="160" height="26" rx="6" ry="6" fill="#F1F5F9" />
           <text x="80" y="17" font-family="'Inter', -apple-system, sans-serif" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">
-            Configuration: ${escapeXml(data.unitType || 'Premium')}
+            ${data.unitType ? `Configuration: ${escapeXml(data.unitType)}` : ''}
           </text>
 
           <rect x="170" y="0" width="160" height="26" rx="6" ry="6" fill="#F1F5F9" />
           <text x="250" y="17" font-family="'Inter', -apple-system, sans-serif" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">
-            Super Area: ${data.areaSqFt ? escapeXml(String(data.areaSqFt)) + ' Sq. Ft.' : 'Spacious Layout'}
+            ${data.areaSqFt ? `Super Area: ${escapeXml(String(data.areaSqFt))} Sq. Ft.` : ''}
           </text>
         </g>
 
@@ -350,10 +352,10 @@ export async function renderOccasionPoster(params: {
 
         <!-- Official Contact & RERA Footer -->
         <text x="${(contentWidth - 20) / 2}" y="${infoCardHeight - 44}" font-family="'Inter', -apple-system, sans-serif" font-size="11" font-weight="600" fill="#0F172A" text-anchor="middle">
-          Official Sales Gallery: ${escapeXml(data.phone || '+91 98765 43210')} • ${escapeXml(data.orgName || 'GDPL')}
+          ${escapeXml([data.phone ? `Sales: ${data.phone}` : '', data.orgName || ''].filter(Boolean).join(' • '))}
         </text>
         <text x="${(contentWidth - 20) / 2}" y="${infoCardHeight - 30}" font-family="'Inter', -apple-system, sans-serif" font-size="10" font-weight="500" fill="#64748B" text-anchor="middle">
-          RERA Registered: ${escapeXml(data.reraNumber || 'PBRERA-SAS81-PR0123')} • 100% Verified Authentic On-Site Photography
+          ${data.reraNumber ? `RERA Reg. No: ${escapeXml(data.reraNumber)}` : ''}
         </text>
       </g>
     </svg>
