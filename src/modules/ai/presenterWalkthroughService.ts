@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawnMediaTool } from '../../utils/ffmpeg.js';
 import { Types } from 'mongoose';
 import sharp from 'sharp';
 import { Project, IProject } from '../../models/Project.js';
@@ -16,6 +16,7 @@ import { defaultStorage } from '../../storage/localStorage.adapter.js';
 import { presenterScriptService, PresenterScriptResult } from './presenterScriptService.js';
 import { voiceoverService } from './voiceoverService.js';
 import { logger } from '../../config/logger.js';
+import { AppError } from '../../utils/AppError.js';
 
 export interface GeneratePresenterWalkthroughParams {
   organizationId: string | Types.ObjectId;
@@ -81,7 +82,7 @@ export class PresenterWalkthroughService {
   private async loadAssetBuffer(asset: IMediaAsset): Promise<Buffer> {
     if (asset.storageKey) {
       try {
-        const localPath = defaultStorage.getAbsolutePath(asset.storageKey);
+        const localPath = await defaultStorage.ensureLocal(asset.storageKey);
         if (fsSync.existsSync(localPath)) {
           return await fs.readFile(localPath);
         }
@@ -102,17 +103,10 @@ export class PresenterWalkthroughService {
       }
     }
 
-    // High quality architectural placeholder
-    return sharp({
-      create: {
-        width: 1080,
-        height: 1920,
-        channels: 4,
-        background: { r: 15, g: 23, b: 42, alpha: 1 },
-      },
-    })
-      .png()
-      .toBuffer();
+    throw AppError.notFound(
+      `Photo "${asset.filename || asset._id}" could not be loaded from storage. Re-upload it and try again.`,
+      'MEDIA_FILE_MISSING'
+    );
   }
 
   /**
@@ -350,19 +344,21 @@ export class PresenterWalkthroughService {
     // 4. Generate 4-Act Presenter Script
     const details = (project.details || {}) as Record<string, any>;
     const scriptResult: PresenterScriptResult = await presenterScriptService.generateScript({
-      projectName: project.name || 'Luxury Residences',
+      projectName: project.name,
       category: project.category,
       subtype: project.subtype,
-      city: project.location?.city || details.city || 'Mohali',
-      state: project.location?.state || details.state || 'Punjab',
-      sectorOrLocation: details.sector || project.location?.address || 'Sector 66 / Airport Road',
-      bhk: unit?.unitType || details.bhk ? `${details.bhk} BHK` : '3 BHK',
-      areaSqFt: unit?.carpetAreaSqFt || unit?.superBuiltUpAreaSqFt || details.carpetAreaSqFt || '1850',
-      priceDisplay: unit?.price ? `₹ ${(unit.price / 10000000).toFixed(2)} Cr*` : details.priceRange || '₹ 1.25 Cr Onwards',
-      amenities: project.amenities || ['Clubhouse', 'Swimming Pool', 'Security'],
+      city: project.location?.city || details.city,
+      state: project.location?.state || details.state,
+      sectorOrLocation: details.sector || project.location?.microMarket || project.location?.address,
+      bhk: unit?.unitType || (details.bhk ? `${details.bhk} BHK` : undefined),
+      areaSqFt: unit?.carpetAreaSqFt || unit?.superBuiltUpAreaSqFt || details.carpetAreaSqFt,
+      priceDisplay: unit?.price
+        ? `₹ ${(unit.price / 10000000).toFixed(2)} Cr`
+        : project.priceRange?.display || details.priceRange,
+      amenities: project.amenities?.length ? project.amenities : undefined,
       reraNumber: project.reraNumber,
-      salesPhone: project.ownerContacts?.[0]?.phone || '+91 77103-80077',
-      salesOfficeName: project.ownerContacts?.[0]?.name || organization?.name || 'Experience Centre',
+      salesPhone: project.ownerContacts?.[0]?.phone,
+      salesOfficeName: project.ownerContacts?.[0]?.name || organization?.name,
       language,
       stylePreset,
     });
@@ -510,7 +506,7 @@ export class PresenterWalkthroughService {
     logger.info({ binary: ffmpegBin, outputVideoPath }, 'Executing FFmpeg Presenter Walkthrough Video rendering');
 
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(ffmpegBin, ffmpegArgs);
+      const proc = spawnMediaTool(ffmpegBin, ffmpegArgs);
       let stderr = '';
       proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
       proc.on('error', reject);
@@ -526,7 +522,7 @@ export class PresenterWalkthroughService {
 
     // Extract poster frame thumbnail at 1.0s
     await new Promise<void>((resolve) => {
-      const proc = spawn(ffmpegBin, [
+      const proc = spawnMediaTool(ffmpegBin, [
         '-ss', '1.0',
         '-i', outputVideoPath,
         '-vframes', '1',
@@ -538,9 +534,12 @@ export class PresenterWalkthroughService {
       proc.on('error', () => resolve());
     });
 
+    await defaultStorage.persist(videoKey);
+    await defaultStorage.persist(posterKey);
+
     // 9. Create Creative in MongoDB
-    const videoUrl = `/storage/${videoKey}`;
-    const posterUrl = fsSync.existsSync(outputPosterPath) ? `/storage/${posterKey}` : null;
+    const videoUrl = defaultStorage.getUrl(videoKey);
+    const posterUrl = fsSync.existsSync(outputPosterPath) ? defaultStorage.getUrl(posterKey) : null;
 
     const sourceAssetIds = actPhotos.map((p) => p._id as Types.ObjectId);
 

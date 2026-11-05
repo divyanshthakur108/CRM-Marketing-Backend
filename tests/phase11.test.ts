@@ -1,3 +1,5 @@
+import { defaultStorage } from '../src/storage/localStorage.adapter.js';
+import fsSync from 'fs';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { Express } from 'express';
@@ -20,7 +22,8 @@ import {
   Notification,
 } from '../src/models/index.js';
 import { initAllIndexes } from '../src/models/initIndexes.js';
-import { getAIProvider, MockAIProvider } from '../src/modules/ai/providers/index.js';
+import { getAIProvider } from '../src/modules/ai/providers/index.js';
+import { MockAIProvider } from './fakes/fakeAIProvider.js';
 import { FactChecker } from '../src/modules/ai/factChecker.js';
 import { jobQueue } from '../src/queue/jobQueue.js';
 import { processNextJob } from '../src/worker.js';
@@ -189,7 +192,7 @@ describe('Phase 11: AI Creatives, Captions, Job Queue & Rolling Scheduler', () =
   // 1. Provider Interface & Deterministic MockProvider
   // =========================================================================
   describe('1. AI Provider Interface & Deterministic MockProvider', () => {
-    it('selects MockAIProvider when AI_PROVIDER=mock and returns deterministic outputs', async () => {
+    it('uses the test fake AI provider (wired in tests/setup.ts) and returns deterministic outputs', async () => {
       const provider = getAIProvider();
       expect(provider).toBeInstanceOf(MockAIProvider);
       expect(provider.name).toBe('mock');
@@ -230,7 +233,9 @@ describe('Phase 11: AI Creatives, Captions, Job Queue & Rolling Scheduler', () =
       });
       expect(video.format).toBe('9:16');
       expect(video.durationSeconds).toBe(15);
-      expect(video.videoUrl).toContain('mock-video-reel-9x16');
+      // The test fake writes a real clip so stitching code has an actual file
+      expect(video.storageKey).toMatch(/^ai-videos\/test-clip-/);
+      expect(fsSync.existsSync(defaultStorage.getAbsolutePath(video.storageKey!))).toBe(true);
     });
 
     it('generates Hinglish and Hindi captions deterministically', async () => {

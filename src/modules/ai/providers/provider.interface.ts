@@ -93,12 +93,24 @@ export interface GeneratedVideoResult {
   isIllustrative?: boolean;
 }
 
+export interface GenerateJsonOptions {
+  /** Photos or audio to send along with the prompt (inline data) */
+  images?: Array<{ data: Buffer; mimeType?: string }>;
+  /** Human-readable feature name used in error messages */
+  feature?: string;
+}
+
 export interface IAIProvider {
   name: string;
   isConfigured(): boolean;
+  /** Runs a prompt that must return JSON and parses it. Throws a clear AppError on any failure. */
+  generateJson<T = unknown>(prompt: string, options?: GenerateJsonOptions): Promise<T>;
   generateCaption(data: CaptionPromptData): Promise<GeneratedCaptionResult>;
   generateImage(options: GenerateImageOptions): Promise<GeneratedImageResult>;
   imageToVideo(options: ImageToVideoOptions): Promise<GeneratedVideoResult>;
   analyzeImage?(options: ImageAnalysisOptions): Promise<ImageAnalysisResult>;
   generateImageToImage?(options: GenerateImageOptions): Promise<GeneratedImageResult>;
 }
+
+/** Image-only providers (fal.ai, Replicate, local enhancer): everything except JSON text prompts. */
+export type ImageProvider = Omit<IAIProvider, 'generateJson'>;

@@ -1,0 +1,16 @@
+# Only the video editing tools run in Docker. Node and the database run on your machine as usual.
+#
+#   docker compose up -d media-tools     # build (first time) and start
+#   then set MEDIA_TOOLS=docker in .env  # the backend runs ffmpeg/ffprobe inside this container
+#
+# The backend folder is mounted at /work, so the container sees storage/ and assets/fonts/.
+services:
+  media-tools:
+    build: ./docker/media-tools
+    image: realcrm-media-tools:1
+    container_name: realcrm-media-tools
+    init: true
+    restart: unless-stopped
+    working_dir: /work
+    volumes:
+      - ./:/work

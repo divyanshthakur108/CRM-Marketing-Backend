@@ -2,7 +2,7 @@ import { env } from '../../../config/env.js';
 import { logger } from '../../../config/logger.js';
 import { defaultStorage } from '../../../storage/localStorage.adapter.js';
 import {
-  IAIProvider,
+  ImageProvider,
   CaptionPromptData,
   GeneratedCaptionResult,
   GenerateImageOptions,
@@ -13,7 +13,7 @@ import {
   ImageAnalysisResult,
 } from './provider.interface.js';
 
-export class FalAiProvider implements IAIProvider {
+export class FalAiProvider implements ImageProvider {
   public readonly name = 'fal';
 
   public isConfigured(): boolean {

@@ -1,8 +1,7 @@
 import { Types } from 'mongoose';
 import sharp from 'sharp';
-import { spawn } from 'child_process';
+import { spawnFfmpeg } from '../../utils/ffmpeg.js';
 import fs from 'fs/promises';
-import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import { MediaAsset, IMediaAsset, MediaAspectRatio, MediaType, MediaCategory } from '../../models/MediaAsset.js';
@@ -48,7 +47,9 @@ class MediaService {
   }
 
   private async extractVideoPoster(buffer: Buffer, subfolder: string): Promise<string | null> {
-    const tempDir = os.tmpdir();
+    // Inside the backend folder so ffmpeg in the media-tools container (MEDIA_TOOLS=docker) can see it
+    const tempDir = path.resolve(process.cwd(), 'storage', 'scratch');
+    await fs.mkdir(tempDir, { recursive: true });
     const tempVideoPath = path.join(tempDir, `vid_${crypto.randomUUID()}.mp4`);
     const tempPosterPath = path.join(tempDir, `poster_${crypto.randomUUID()}.jpg`);
 
@@ -56,7 +57,7 @@ class MediaService {
       await fs.writeFile(tempVideoPath, buffer);
 
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn('ffmpeg', [
+        const proc = spawnFfmpeg([
           '-y',
           '-ss', '00:00:01',
           '-i', tempVideoPath,

@@ -37,6 +37,12 @@ class MediaController {
     req: Request,
     res: Response
   ): Promise<void> {
+    if (defaultStorage.isCloudinary) {
+      // Cloudinary serves the file (with range support) from its CDN
+      res.redirect(302, defaultStorage.getUrl(key));
+      return;
+    }
+
     const filePath = defaultStorage.getAbsolutePath(key);
     let stat;
     try {

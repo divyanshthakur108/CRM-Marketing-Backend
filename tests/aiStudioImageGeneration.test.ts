@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import sharp from 'sharp';
 import { aiStudioService } from '../src/modules/ai/aiStudioService.js';
 import { aiOrchestrator, EnhancedLocalProvider } from '../src/modules/ai/providers/index.js';
+import { env } from '../src/config/env.js';
 
 describe('AI Studio Professional Image Generation Suite Tests', () => {
   it('EnhancedLocalProvider performs architectural photo enhancement and preserves 100% structure', async () => {
@@ -55,8 +56,7 @@ describe('AI Studio Professional Image Generation Suite Tests', () => {
     expect(result.isIllustrative).toBe(false);
   });
 
-  it('AI Provider Orchestrator automatically falls back to local engine without throwing errors', async () => {
-    // Generate test image through orchestrator
+  it('AI Provider Orchestrator uses the local engine only when IMAGE_TO_IMAGE_PROVIDER=local', async () => {
     const testBuffer = await sharp({
       create: {
         width: 600,
@@ -67,17 +67,33 @@ describe('AI Studio Professional Image Generation Suite Tests', () => {
     })
       .png()
       .toBuffer();
-
-    const result = await aiOrchestrator.generateImage({
+    const options = {
       prompt: 'Twilight exterior high-rise facade',
       sourceImageBuffer: testBuffer,
-      aspectRatio: '4:5',
-      mode: 'DAY_TO_DUSK',
-    });
+      aspectRatio: '4:5' as const,
+      mode: 'DAY_TO_DUSK' as const,
+    };
 
-    expect(result.url).toBeTruthy();
-    expect(result.structurePreservationScore).toBeGreaterThanOrEqual(98);
-    expect(result.format).toBe('4:5');
+    const saved = {
+      IMAGE_TO_IMAGE_PROVIDER: env.IMAGE_TO_IMAGE_PROVIDER,
+      FAL_KEY: env.FAL_KEY,
+      REPLICATE_API_TOKEN: env.REPLICATE_API_TOKEN,
+      GEMINI_API_KEY: env.GEMINI_API_KEY,
+    };
+    try {
+      // Chosen on purpose: the local engine grades the real photo
+      (env as any).IMAGE_TO_IMAGE_PROVIDER = 'local';
+      const result = await aiOrchestrator.generateImage(options);
+      expect(result.url).toBeTruthy();
+      expect(result.structurePreservationScore).toBeGreaterThanOrEqual(98);
+      expect(result.format).toBe('4:5');
+
+      // 'auto' with no AI configured: a clear error, never a silent local/fake result
+      Object.assign(env as any, { IMAGE_TO_IMAGE_PROVIDER: 'auto', FAL_KEY: '', REPLICATE_API_TOKEN: '', GEMINI_API_KEY: '' });
+      await expect(aiOrchestrator.generateImage(options)).rejects.toMatchObject({ code: 'AI_NOT_CONFIGURED' });
+    } finally {
+      Object.assign(env as any, saved);
+    }
   });
 
   it('Validates photo upload constraints (rejects undersized images)', async () => {

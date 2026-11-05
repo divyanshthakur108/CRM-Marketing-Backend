@@ -1,5 +1,8 @@
 # RealCRM Backend API
 
+> **Start here:** `docs/OVERVIEW.md` (setup on macOS/Windows, architecture). Video editing: `docs/VIDEO_LAB.md` and `docs/VIDEO_PIPELINE_PLAN.md`.
+> Video tools (ffmpeg) run in Docker on any OS: `docker compose up -d media-tools` and `MEDIA_TOOLS=docker` in `.env`.
+
 Enterprise Multi-Tenant AI Real Estate Marketing Automation + CRM Backend Service.  
 Built with **Node.js, Express.js, TypeScript, Mongoose (MongoDB), Vitest, and Pino**.
 
@@ -13,7 +16,7 @@ Built with **Node.js, Express.js, TypeScript, Mongoose (MongoDB), Vitest, and Pi
 - **Fair Housing Act Compliance:** Automated pre-flight policy guards preventing discriminatory targeting (age, gender, postal codes) on real estate ads.
 - **Pluggable Architecture:**
   - **Meta Adapter:** `MockMetaAdapter` (default sandbox) and `RealMetaAdapter` (production Graph API v21.0).
-  - **AI Provider:** `MockAIProvider` (deterministic local real estate copywriter) and `GeminiAIProvider` (Google Gemini Pro).
+  - **AI Provider:** `GeminiAIProvider` only. No fake output: when Gemini is unavailable, requests fail with a clear error. Tests use a fake from `tests/fakes/`.
   - **WhatsApp Adapter:** `MockWhatsAppAdapter` (sandbox with consent enforcement and bot handoff).
 - **Background Worker Engine:** Resilient MongoDB-backed job queue with heartbeat recovery, exponential backoff, and idempotent retry.
 - **Comprehensive Test Suite:** 141 passing unit, API, tenant-isolation, and role matrix tests with 100% coverage of core business rules.
@@ -55,7 +58,6 @@ backend/
 │   │   └── appointments/       # Site-visit slots, double-booking prevention & tasks
 │   ├── queue/                  # Job queue dispatcher & worker execution
 │   └── scripts/
-│       ├── seed.ts             # Full enterprise database seed
 │       └── e2eServer.ts        # Standalone in-memory MongoDB runner for E2E
 └── tests/                      # 11 Vitest test suites (141 tests)
 ```
@@ -104,9 +106,9 @@ This launches a self-contained in-memory MongoDB database instance, seeds standa
 
 ### 4.3 Run with External MongoDB
 1. Ensure your MongoDB instance is running and set `MONGODB_URI` in `.env`.
-2. Seed the initial database:
+2. Create the platform admin (from `ADMIN_EMAIL` / `ADMIN_PASSWORD`). No demo data is seeded:
    ```bash
-   npm run seed
+   npm run seed:admin
    ```
 3. Start the development server with live reload:
    ```bash
@@ -146,16 +148,9 @@ npx vitest run tests/phase14.test.ts
 
 ---
 
-## 6. Seeded Test Credentials
+## 6. Accounts
 
-| Email | Password | Role | Organization |
-|---|---|---|---|
-| `owner@apex-luxury.in` | `Password123!` | `org_owner` | Apex Luxury Estates |
-| `manager@apex-luxury.in` | `Password123!` | `marketing_manager` | Apex Luxury Estates |
-| `approver@apex-luxury.in` | `Password123!` | `client_approver` | Apex Luxury Estates |
-| `sales@apex-luxury.in` | `Password123!` | `sales_agent` | Apex Luxury Estates |
-| `viewer@apex-luxury.in` | `Password123!` | `viewer` | Apex Luxury Estates |
-| `owner@zenith-commercial.in` | `Password123!` | `org_owner` | Zenith Commercial Partners |
+Only the platform admin is created (`npm run seed:admin`). Organizations and their users are created through signup / admin onboarding in the app.
 
 ---
 

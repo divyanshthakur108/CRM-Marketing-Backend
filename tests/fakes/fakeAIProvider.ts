@@ -6,14 +6,78 @@ import {
   GeneratedImageResult,
   ImageToVideoOptions,
   GeneratedVideoResult,
-} from './provider.interface.js';
-import { defaultStorage } from '../../../storage/localStorage.adapter.js';
+  GenerateJsonOptions,
+} from '../../src/modules/ai/providers/provider.interface.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { defaultStorage } from '../../src/storage/localStorage.adapter.js';
+import { runFfmpeg } from '../../src/utils/ffmpeg.js';
 
+/** Test-only fake. Never used by the running app. */
 export class MockAIProvider implements IAIProvider {
   public readonly name = 'mock';
 
   public isConfigured(): boolean {
     return true;
+  }
+
+  /** Returns well-formed JSON for each AI feature so tests exercise the real parsing code paths. */
+  public async generateJson<T = unknown>(prompt: string, options: GenerateJsonOptions = {}): Promise<T> {
+    const feature = options.feature || '';
+    const project = prompt.match(/Project name: (.+)/)?.[1]?.trim() || 'Test Project';
+
+    if (feature === 'AI photo analysis') {
+      const count = options.images?.length || Number(prompt.match(/given (\d+) photo/)?.[1] || 1);
+      const categories = ['Living Room', 'Bedroom', 'Kitchen', 'Bathroom', 'Balcony / Terrace', 'Exterior / Facade'];
+      return {
+        photos: Array.from({ length: count }, (_, i) => ({
+          photoNumber: i + 1,
+          category: categories[i % categories.length],
+          visibleFeatures: [`Test feature ${i + 1}A`, `Test feature ${i + 1}B`],
+          lighting: 'Natural daylight',
+          perspective: 'Eye-level wide shot',
+        })),
+        architecturalStyle: 'Contemporary',
+        dominantColors: ['White', 'Grey'],
+        lightingProfile: 'Natural daylight',
+        roomLayouts: ['Open living and dining'],
+        summary: 'Test analysis summary.',
+      } as T;
+    }
+    if (feature === 'AI caption writing') {
+      return {
+        variants: ['HERITAGE_LUXURY', 'HIGH_GROWTH_ROI', 'SHORT_REEL'].map((style) => ({
+          title: `${style} caption`,
+          style,
+          hook: `[TEST] Hook for ${project}`,
+          body: `[TEST] Body for ${project}`,
+          cta: '[TEST] Book a visit',
+          legalAndHashtags: `#${project.replace(/\s+/g, '')}`,
+        })),
+      } as T;
+    }
+    if (feature === 'AI presenter script') {
+      const rooms = ['EXTERIOR', 'LIVING', 'BEDROOM', 'BALCONY'];
+      return {
+        headline: `[TEST] Walkthrough of ${project}`,
+        caption: `[TEST] Caption for ${project}`,
+        hashtags: ['#Test'],
+        acts: rooms.map((room, i) => ({
+          actNumber: i + 1,
+          actTitle: `Act ${i + 1}`,
+          targetRoom: room,
+          speech: `[TEST] Narration for act ${i + 1} of ${project}.`,
+          lowerThird: { headline: project, subline: room },
+        })),
+      } as T;
+    }
+    // Generic copy (AI copywriting)
+    return {
+      hooks: [`[TEST] Hook 1 for ${project}`, `[TEST] Hook 2`, `[TEST] Hook 3`],
+      shortCaption: `[TEST] Short caption for ${project}.`,
+      longCaption: `[TEST] Long caption for ${project}.`,
+      hashtags: ['#Test'],
+    } as T;
   }
 
   public async generateCaption(data: CaptionPromptData): Promise<GeneratedCaptionResult> {
@@ -112,16 +176,26 @@ export class MockAIProvider implements IAIProvider {
     };
   }
 
+  /** Writes a real (tiny) test clip with ffmpeg so the code that stitches clips has an actual file to use. */
   public async imageToVideo(options: ImageToVideoOptions): Promise<GeneratedVideoResult> {
     const format = options.aspectRatio || '9:16';
     const durationSeconds = options.durationSeconds || 15;
+    const storageKey = `ai-videos/test-clip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.mp4`;
+    const outPath = defaultStorage.getAbsolutePath(storageKey);
+    await fs.mkdir(path.dirname(outPath), { recursive: true });
+    await runFfmpeg([
+      '-hide_banner', '-loglevel', 'error', '-y',
+      '-f', 'lavfi', '-i', `testsrc2=s=540x960:r=24:d=${durationSeconds}`,
+      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an',
+      outPath,
+    ]);
 
     return {
-      videoUrl: `/api/v1/media/mock-video-reel-${format.replace(':', 'x')}.mp4`,
-      storageKey: `mock-video-${Date.now()}.mp4`,
+      videoUrl: defaultStorage.getUrl(storageKey),
+      storageKey,
       durationSeconds,
       format,
-      model: 'mock-video-engine-v1',
+      model: 'test-video-engine',
       isIllustrative: true,
     };
   }

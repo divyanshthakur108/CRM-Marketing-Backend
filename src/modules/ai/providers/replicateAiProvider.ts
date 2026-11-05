@@ -2,7 +2,7 @@ import { env } from '../../../config/env.js';
 import { logger } from '../../../config/logger.js';
 import { defaultStorage } from '../../../storage/localStorage.adapter.js';
 import {
-  IAIProvider,
+  ImageProvider,
   CaptionPromptData,
   GeneratedCaptionResult,
   GenerateImageOptions,
@@ -11,7 +11,7 @@ import {
   GeneratedVideoResult,
 } from './provider.interface.js';
 
-export class ReplicateAiProvider implements IAIProvider {
+export class ReplicateAiProvider implements ImageProvider {
   public readonly name = 'replicate';
 
   public isConfigured(): boolean {

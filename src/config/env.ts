@@ -27,12 +27,14 @@ const envSchema = z.object({
   CLIENT_URL: z.string().default('http://localhost:5173'),
   CORS_ORIGIN: z.string().optional(),
   GEMINI_API_KEY: z.string().optional().default(''),
-  AI_PROVIDER: z.enum(['mock', 'gemini', 'none']).default('mock'),
+  // 'none' turns AI off; requests then fail with a clear "not configured" error
+  AI_PROVIDER: z.enum(['gemini', 'none']).default('gemini'),
+  GEMINI_TEXT_MODEL: z.string().default('gemini-3.5-flash'),
+  GEMINI_IMAGE_MODEL: z.string().default('gemini-3.1-flash-image'),
   IMAGE_TO_IMAGE_PROVIDER: z.enum(['fal', 'replicate', 'gemini', 'local', 'auto']).default('auto'),
   FAL_KEY: z.string().optional().default(''),
   REPLICATE_API_TOKEN: z.string().optional().default(''),
   CONTROLNET_MODEL: z.string().default('fal-ai/flux/dev/image-to-image'),
-  GEMINI_IMAGE_MODEL: z.string().default('imagen-3.0-generate-002'),
   GEMINI_VIDEO_MODEL: z.string().default('veo-2.0-generate-001'),
   AI_DAILY_COST_CAP_USD: z.coerce.number().default(25.0),
   AI_MAX_VIDEO_SECONDS_PER_REEL: z.coerce.number().default(25),
@@ -57,6 +59,10 @@ const envSchema = z.object({
   MEDIA_MAX_PDF_MB: z.coerce.number().default(20),
   MEDIA_MAX_FILES_PER_PROJECT: z.coerce.number().default(100),
   MEDIA_UPLOAD_RATE_LIMIT: z.coerce.number().default(120),
+  CLOUDINARY_CLOUD_NAME: z.string().default(''),
+  CLOUDINARY_API_KEY: z.string().default(''),
+  CLOUDINARY_API_SECRET: z.string().default(''),
+  CLOUDINARY_FOLDER: z.string().default('realcrm'),
 });
 
 const parseEnv = () => {
@@ -68,12 +74,14 @@ const parseEnv = () => {
     CLIENT_URL: process.env.CLIENT_URL || process.env.CORS_ORIGIN || 'http://localhost:5173',
     CORS_ORIGIN: process.env.CORS_ORIGIN,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-    AI_PROVIDER: (process.env.AI_PROVIDER as 'mock' | 'gemini' | 'none') || 'mock',
+    // Legacy value 'mock' is treated as 'none': there is no fake AI mode any more
+    AI_PROVIDER: process.env.AI_PROVIDER === 'mock' ? 'none' : ((process.env.AI_PROVIDER as 'gemini' | 'none') || 'gemini'),
+    GEMINI_TEXT_MODEL: process.env.GEMINI_TEXT_MODEL || 'gemini-3.5-flash',
+    GEMINI_IMAGE_MODEL: process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image',
     IMAGE_TO_IMAGE_PROVIDER: (process.env.IMAGE_TO_IMAGE_PROVIDER as 'fal' | 'replicate' | 'gemini' | 'local' | 'auto') || 'auto',
     FAL_KEY: process.env.FAL_KEY || '',
     REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN || '',
     CONTROLNET_MODEL: process.env.CONTROLNET_MODEL || 'fal-ai/flux/dev/image-to-image',
-    GEMINI_IMAGE_MODEL: process.env.GEMINI_IMAGE_MODEL || 'imagen-3.0-generate-002',
     GEMINI_VIDEO_MODEL: process.env.GEMINI_VIDEO_MODEL || 'veo-2.0-generate-001',
     AI_DAILY_COST_CAP_USD: process.env.AI_DAILY_COST_CAP_USD ? parseFloat(process.env.AI_DAILY_COST_CAP_USD) : 25.0,
     AI_MAX_VIDEO_SECONDS_PER_REEL: process.env.AI_MAX_VIDEO_SECONDS_PER_REEL ? parseInt(process.env.AI_MAX_VIDEO_SECONDS_PER_REEL, 10) : 25,
@@ -99,6 +107,10 @@ const parseEnv = () => {
     MEDIA_MAX_PDF_MB: process.env.MEDIA_MAX_PDF_MB ? parseInt(process.env.MEDIA_MAX_PDF_MB, 10) : 20,
     MEDIA_MAX_FILES_PER_PROJECT: process.env.MEDIA_MAX_FILES_PER_PROJECT ? parseInt(process.env.MEDIA_MAX_FILES_PER_PROJECT, 10) : 100,
     MEDIA_UPLOAD_RATE_LIMIT: process.env.MEDIA_UPLOAD_RATE_LIMIT ? parseInt(process.env.MEDIA_UPLOAD_RATE_LIMIT, 10) : 120,
+    CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || '',
+    CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY || '',
+    CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET || '',
+    CLOUDINARY_FOLDER: process.env.CLOUDINARY_FOLDER || 'realcrm',
   });
 
   if (!result.success) {

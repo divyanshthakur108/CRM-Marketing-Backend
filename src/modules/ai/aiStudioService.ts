@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawnMediaTool } from '../../utils/ffmpeg.js';
 import { AiStudioBatch, IAiStudioBatch, IAiStudioImage, IAiStudioReel, IPropertyVisionAnalysis, ReelVariationStyle } from '../../models/AiStudioBatch.js';
 import { Project } from '../../models/Project.js';
 import { MediaAsset, IMediaAsset } from '../../models/MediaAsset.js';
@@ -16,6 +16,21 @@ import { env } from '../../config/env.js';
 import { AppError } from '../../utils/AppError.js';
 import { getAIProvider, aiOrchestrator } from './providers/index.js';
 import { jobQueue } from '../../queue/jobQueue.js';
+
+const MAX_ANALYZED_PHOTOS = 12;
+const PHOTO_CATEGORIES = [
+  'Living Room',
+  'Bedroom',
+  'Kitchen',
+  'Bathroom',
+  'Balcony / Terrace',
+  'Exterior / Facade',
+  'Dining Area',
+  'Amenities',
+  'Ceiling & Lighting',
+  'Floor Plan',
+  'Other',
+];
 
 export class AiStudioService {
   private toObjectId(id: Types.ObjectId | string): Types.ObjectId {
@@ -83,7 +98,7 @@ export class AiStudioService {
   private async loadAssetBuffer(asset: IMediaAsset): Promise<Buffer> {
     if (asset.storageKey) {
       try {
-        const localPath = defaultStorage.getAbsolutePath(asset.storageKey);
+        const localPath = await defaultStorage.ensureLocal(asset.storageKey);
         if (fsSync.existsSync(localPath)) {
           return await fs.readFile(localPath);
         }
@@ -104,17 +119,24 @@ export class AiStudioService {
       }
     }
 
-    // High quality architectural fallback buffer
-    return sharp({
-      create: {
-        width: 1080,
-        height: 1350,
-        channels: 4,
-        background: { r: 15, g: 23, b: 42, alpha: 1 },
-      },
-    })
-      .png()
-      .toBuffer();
+    throw AppError.notFound(
+      `Photo "${asset.filename || asset._id}" could not be loaded from storage. Re-upload it and try again.`,
+      'MEDIA_FILE_MISSING'
+    );
+  }
+
+  /**
+   * Generates one AI image from a client photo with Gemini and returns its bytes.
+   * The intermediate file is removed; callers save the final composed image themselves.
+   */
+  private async generateAiShot(prompt: string, sourceImageBuffer: Buffer): Promise<Buffer> {
+    const result = await getAIProvider().generateImage({ prompt, aspectRatio: '4:5', sourceImageBuffer });
+    if (!result.key) {
+      throw new AppError(502, 'AI_FAILED', 'AI image generation returned no image. Please try again.');
+    }
+    const buffer = await defaultStorage.download(result.key);
+    await defaultStorage.delete(result.key).catch(() => {});
+    return buffer;
   }
 
   /**
@@ -162,8 +184,8 @@ export class AiStudioService {
       }
       return hex;
     } catch {
-      // Fallback pseudo-hash
-      return Math.random().toString(16).substring(2, 18);
+      // Unknown hash: treated as "not comparable" by hammingDistance
+      return '';
     }
   }
 
@@ -222,199 +244,80 @@ export class AiStudioService {
     }
 
     const details = (project.details || {}) as Record<string, any>;
-    const pName = project.name || 'Luxury Property';
-    const city = project.location?.city || details.city || 'Prime Location';
-    const sector = details.sector || project.location?.address || 'Prime City Corridor';
-    const bhk = details.bhk ? `${details.bhk} BHK` : '3 BHK';
+    const photos = mediaPhotos.slice(0, MAX_ANALYZED_PHOTOS);
 
-    // Room feature catalogs for accurate categorization
-    const ROOM_FEATURE_MAP: Record<string, string[]> = {
-      'Grand Living Room': [
-        'Italian marble floor reflections',
-        'Floor-to-ceiling glass sliding doors',
-        'Contemporary lounge seating',
-        'Architectural false ceiling with recessed LEDs',
-      ],
-      'Master Bedroom Suite': [
-        'Plush upholstered headboard wall',
-        'Acoustic double-glazed glazing',
-        'Warm concealed cove lighting',
-        'Engineered wooden texture',
-      ],
-      'Modular Island Kitchen': [
-        'High-gloss quartz countertop',
-        'Soft-close modular cabinetry',
-        'Under-cabinet task illumination',
-        'Integrated chimney & appliance zone',
-      ],
-      'Spa En-Suite Bathroom': [
-        'Full-height porcelain marble tiles',
-        'Floating vanity counter with LED backlit mirror',
-        'Frameless glass shower enclosure',
-      ],
-      'Panoramic Sky Balcony': [
-        'Toughened glass safety railing',
-        'Panoramic horizon skyline view',
-        'Anti-skid outdoor deck flooring',
-      ],
-      'Ceiling & Architectural Lighting': [
-        'Multi-tier recessed false ceiling',
-        'Modern linear cove lighting',
-        'Sculptural central chandelier',
-        'Concealed ambient fixtures',
-      ],
-      'Exterior Facade & Arrival': [
-        'Modern monolithic facade elevation',
-        'Architectural sunshades',
-        'Landscaped arrival boulevard',
-        'Grand entrance portico',
-      ],
-      'Formal Dining Foyer': [
-        '6-seater designer dining arrangement',
-        'Overhead brass pendant fixture',
-        'Adjacent buffet counter',
-      ],
-      'Resident Clubhouse & Amenities': [
-        'Resort-style recreational zone',
-        'Modern athletic equipment',
-        'Lush landscaped gathering deck',
-      ],
-    };
+    // Downscale photos before sending them to Gemini (keeps requests small and fast)
+    const images = await Promise.all(
+      photos.map(async (m) => ({
+        data: await sharp(await this.loadAssetBuffer(m))
+          .rotate()
+          .resize(768, 768, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer(),
+        mimeType: 'image/jpeg',
+      }))
+    );
 
-    const analyzedPhotos = [];
-    const detectedSpacesSet = new Set<string>();
-    const allUniqueFeaturesSet = new Set<string>();
+    const result = await getAIProvider().generateJson<{
+      photos?: Array<{
+        photoNumber?: number;
+        category?: string;
+        visibleFeatures?: string[];
+        lighting?: string;
+        perspective?: string;
+      }>;
+      architecturalStyle?: string;
+      dominantColors?: string[];
+      lightingProfile?: string;
+      roomLayouts?: string[];
+      summary?: string;
+    }>(
+      `You are given ${photos.length} photo(s) of the real estate project "${project.name}", numbered 1 to ${photos.length} in the order provided.
 
-    for (let i = 0; i < mediaPhotos.length; i++) {
-      const m = mediaPhotos[i];
-      const tagStr = [m.room, m.roomType, m.category, ...(m.tags || []), m.filename]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+Describe ONLY what is clearly visible in each photo. Do not guess materials, brands, views or amenities you cannot see. If unsure, leave it out.
 
-      // Analyze image buffer statistics
-      let luminance = 130;
-      let warmth = 1.05;
-      try {
-        const buf = await this.loadAssetBuffer(m);
-        const stats = await sharp(buf).stats();
-        const r = stats.channels[0]?.mean || 128;
-        const g = stats.channels[1]?.mean || 128;
-        const b = stats.channels[2]?.mean || 128;
-        luminance = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-        warmth = r / (b + 0.001);
-      } catch {
-        // Fallback default
+For each photo return:
+- photoNumber
+- category: one of ${PHOTO_CATEGORIES.map((c) => `"${c}"`).join(', ')}
+- visibleFeatures: up to 4 short features actually visible
+- lighting: short description of the lighting in the photo
+- perspective: short description of the camera angle/framing
+
+Also return, based only on the photos: architecturalStyle, dominantColors (up to 5 plain color names), lightingProfile, roomLayouts (up to 4 short observations), summary (2 sentences).
+
+Return JSON: {"photos": [...], "architecturalStyle": string, "dominantColors": [string], "lightingProfile": string, "roomLayouts": [string], "summary": string}`,
+      { images, feature: 'AI photo analysis' }
+    );
+
+    const byNumber = new Map((result.photos || []).map((p, i) => [Number(p.photoNumber) || i + 1, p]));
+    const analyzedPhotos = photos.map((m, i) => {
+      const r = byNumber.get(i + 1);
+      if (!r || !r.category) {
+        throw new AppError(502, 'AI_FAILED', 'AI photo analysis failed: Gemini did not describe every photo. Please try again.');
       }
-
-      // Categorize photo based on explicit tags, filename, and visual properties
-      let category = 'Grand Living Room';
-      if (/ceiling|cove|chandelier|lighting|fixture/i.test(tagStr)) {
-        category = 'Ceiling & Architectural Lighting';
-      } else if (/living|hall|drawing|lounge|sitting/i.test(tagStr)) {
-        category = 'Grand Living Room';
-      } else if (/bed|master|bedroom|suite/i.test(tagStr)) {
-        category = 'Master Bedroom Suite';
-      } else if (/kitchen|island|cook|pantry/i.test(tagStr)) {
-        category = 'Modular Island Kitchen';
-      } else if (/bath|toilet|wash|vanity|powder/i.test(tagStr)) {
-        category = 'Spa En-Suite Bathroom';
-      } else if (/balcony|terrace|deck|patio|verandah/i.test(tagStr)) {
-        category = 'Panoramic Sky Balcony';
-      } else if (/facade|exterior|elevation|building|tower|arrival/i.test(tagStr)) {
-        category = 'Exterior Facade & Arrival';
-      } else if (/dining|table|crockery/i.test(tagStr)) {
-        category = 'Formal Dining Foyer';
-      } else if (/pool|club|gym|garden|amenit/i.test(tagStr)) {
-        category = 'Resident Clubhouse & Amenities';
-      } else {
-        const fallbackRooms = [
-          'Grand Living Room',
-          'Master Bedroom Suite',
-          'Modular Island Kitchen',
-          'Panoramic Sky Balcony',
-          'Ceiling & Architectural Lighting',
-          'Spa En-Suite Bathroom',
-        ];
-        category = fallbackRooms[i % fallbackRooms.length];
-      }
-
-      // Determine lighting condition
-      let lighting = 'Balanced Natural Daylight with Soft Diffusion';
-      if (warmth > 1.25) {
-        lighting = 'Warm Golden Hour Ambient Glow';
-      } else if (luminance > 165) {
-        lighting = 'Sun-Drenched Crisp Natural Daylight';
-      } else if (luminance < 95) {
-        lighting = 'Atmospheric Evening Glow & Recessed Cove Lights';
-      }
-
-      // Determine perspective
-      const perspectives = [
-        'Wide-Angle 24mm Symmetrical Perspective',
-        'Eye-Level 35mm Architectural Framing',
-        'Diagonal 28mm Focal View',
-        'Low-Angle 18mm Hero View',
-      ];
-      const perspective = perspectives[i % perspectives.length];
-
-      let detectedFeatures = ROOM_FEATURE_MAP[category] || [
-        'Contemporary architectural finishes',
-        'High-spec interior materials',
-        'Optimal natural ventilation & illumination',
-      ];
-
-      // Try AI Vision Analysis for deep space recognition
-      try {
-        const buf = await this.loadAssetBuffer(m);
-        const visionResult = await aiOrchestrator.analyzeImage({
-          imageBuffer: buf,
-          filename: m.filename,
-        });
-        if (visionResult.category && ROOM_FEATURE_MAP[visionResult.category]) {
-          category = visionResult.category;
-        }
-        if (visionResult.detectedFeatures && visionResult.detectedFeatures.length > 0) {
-          detectedFeatures = visionResult.detectedFeatures;
-        }
-        if (visionResult.lighting) {
-          lighting = visionResult.lighting;
-        }
-      } catch {
-        // Fall back to rule-based tags and Sharp stats
-      }
-
-      detectedSpacesSet.add(category);
-      detectedFeatures.forEach((f) => allUniqueFeaturesSet.add(f));
-
-      analyzedPhotos.push({
+      return {
         assetId: m._id.toString(),
         url: m.url || defaultStorage.getUrl(m.storageKey),
-        filename: m.filename || `property-photo-${i + 1}.jpg`,
-        category,
-        detectedFeatures,
-        lighting,
-        perspective,
-      });
-    }
+        filename: m.filename || `photo-${i + 1}.jpg`,
+        category: PHOTO_CATEGORIES.includes(r.category) ? r.category : 'Other',
+        detectedFeatures: (r.visibleFeatures || []).map(String).filter(Boolean).slice(0, 4),
+        lighting: r.lighting ? String(r.lighting) : '',
+        perspective: r.perspective ? String(r.perspective) : '',
+      };
+    });
 
-    const detectedSpaces = Array.from(detectedSpacesSet);
-    const uniqueFeatures = Array.from(allUniqueFeaturesSet).slice(0, 8);
+    const detectedSpaces = Array.from(new Set(analyzedPhotos.map((p) => p.category)));
+    const uniqueFeatures = Array.from(new Set(analyzedPhotos.flatMap((p) => p.detectedFeatures))).slice(0, 8);
 
     const visionAnalysis: IPropertyVisionAnalysis = {
-      propertyType: `${project.category || 'Luxury High-Rise'} ${bhk} Residences`,
-      architecturalStyle: 'Modern Contemporary Luxury with Precision Structural Framing & Acoustic Glazing',
-      dominantColors: ['Warm Royal Navy', 'Champagne Gold', 'Botticino Ivory', 'Natural Teak Wood', 'Polished Brass'],
-      lightingProfile: 'Sun-Drenched Golden Hour Natural Daylight with Ambient Recessed Warm Cove Highlights',
-      roomLayouts: [
-        'Open-concept expansive living and formal dining zone with walkout sundeck',
-        'Ergonomic modular island kitchen with soft-close cabinetry and utility annex',
-        'Double-exposure master sanctuary with dedicated dressing zone and en-suite bath',
-        'Deep-set panoramic balcony offering unobstructed horizon vistas',
-      ],
+      propertyType: [project.category, details.bhk ? `${details.bhk} BHK` : ''].filter(Boolean).join(' '),
+      architecturalStyle: result.architecturalStyle ? String(result.architecturalStyle) : '',
+      dominantColors: (result.dominantColors || []).map(String).slice(0, 5),
+      lightingProfile: result.lightingProfile ? String(result.lightingProfile) : '',
+      roomLayouts: (result.roomLayouts || []).map(String).slice(0, 4),
       detectedSpaces,
       uniqueFeatures,
-      analysisSummary: `Comprehensive visual inspection of ${pName} (${mediaPhotos.length} client photos analyzed individually across ${detectedSpaces.length} verified spaces). The property demonstrates distinguished architectural character with spacious open-concept proportions, premium natural textures, and optimal sun exposure. Generated visuals will preserve this exact structural footprint while rendering professional real estate marketing perspectives.`,
+      analysisSummary: result.summary ? String(result.summary) : '',
       analyzedAt: new Date(),
       analyzedPhotos,
     };
@@ -468,26 +371,6 @@ export class AiStudioService {
       throw AppError.badRequest('Insufficient credits to generate AI creative batch. Please top up your subscription.');
     }
 
-    const newBalance = Math.max(0, (subscription.creditsRemaining || 0) - 1);
-    // Deduct 1 credit for the generation batch
-    await Subscription.updateOne(
-      { organizationId },
-      { $inc: { creditsRemaining: -1, creditsUsed: 1 } }
-    );
-
-    try {
-      await UsageLedger.create({
-        organizationId,
-        creditType: 'IMAGE_RENDER',
-        amount: 1,
-        balanceAfter: newBalance,
-        referenceId: project._id.toString(),
-        description: `Generated 15-Shot AI Marketing Image Suite for ${project.name}`,
-      });
-    } catch (ledgerErr) {
-      console.warn('[aiStudioService] Telemetry warning (UsageLedger):', ledgerErr);
-    }
-
     // Compute next version number for this property
     const latestBatch = await AiStudioBatch.findOne({ organizationId, projectId }).sort({ version: -1 });
     const nextVersion = (latestBatch?.version || 0) + 1;
@@ -521,7 +404,7 @@ export class AiStudioService {
         cropAnchor: 'center',
         colorGrade: 'CRISP_DAYLIGHT',
         titleTemplate: (room) => `${room} · Wide Architectural Establishing View`,
-        featureExtractor: (feats) => feats[0] || 'Open-concept layout and natural proportions',
+        featureExtractor: (feats) => feats[0] || '',
         badgeColor: '#0EA5E9',
       },
       {
@@ -532,7 +415,7 @@ export class AiStudioService {
         cropAnchor: 'center',
         colorGrade: 'WARM_GOLDEN',
         titleTemplate: (room) => `${room} · Furniture Styling & Ambient Warmth`,
-        featureExtractor: (feats) => feats[1] || 'Designer furnishings and curated balance',
+        featureExtractor: (feats) => feats[1] || '',
         badgeColor: '#D97706',
       },
       {
@@ -543,7 +426,7 @@ export class AiStudioService {
         cropAnchor: 'top',
         colorGrade: 'DIFFUSED_EDITORIAL',
         titleTemplate: (room) => `${room} · Ceiling Geometry & Lighting Design`,
-        featureExtractor: (feats) => feats[3] || feats[0] || 'Multi-tier recessed cove illumination',
+        featureExtractor: (feats) => feats[3] || feats[0] || '',
         badgeColor: '#8B5CF6',
       },
       {
@@ -554,7 +437,7 @@ export class AiStudioService {
         cropAnchor: 'bottom',
         colorGrade: 'HIGH_CONTRAST',
         titleTemplate: (room) => `${room} · Premium Material Craftsmanship & Finishes`,
-        featureExtractor: (feats) => feats[2] || feats[1] || 'Precision material textures and marble veining',
+        featureExtractor: (feats) => feats[2] || feats[1] || '',
         badgeColor: '#F97316',
       },
       {
@@ -565,7 +448,7 @@ export class AiStudioService {
         cropAnchor: 'bottom',
         colorGrade: 'CRISP_DAYLIGHT',
         titleTemplate: (room) => `${room} · Headroom & Volumetric Proportions`,
-        featureExtractor: (feats) => feats[0] || 'Expansive floor-to-ceiling headroom',
+        featureExtractor: (feats) => feats[0] || '',
         badgeColor: '#10B981',
       },
       {
@@ -576,7 +459,7 @@ export class AiStudioService {
         cropAnchor: 'center',
         colorGrade: 'DIFFUSED_EDITORIAL',
         titleTemplate: (room) => `${room} · Symmetrical Architectural Elevation`,
-        featureExtractor: (feats) => feats[1] || feats[0] || 'Harmonious geometric symmetry',
+        featureExtractor: (feats) => feats[1] || feats[0] || '',
         badgeColor: '#6366F1',
       },
       {
@@ -587,7 +470,7 @@ export class AiStudioService {
         cropAnchor: 'center',
         colorGrade: 'TWILIGHT_DUSK',
         titleTemplate: (room) => `${room} · Evening Twilight Ambience`,
-        featureExtractor: (feats) => feats[2] || 'Atmospheric evening mood and horizon glow',
+        featureExtractor: (feats) => feats[2] || '',
         badgeColor: '#EC4899',
       },
     ];
@@ -607,7 +490,7 @@ export class AiStudioService {
       const photoIndex = i % analyzedPhotos.length;
       const photo = analyzedPhotos[photoIndex];
       const sourcePhotoAsset = mediaPhotos.find((m) => m._id.toString() === photo.assetId) || mediaPhotos[photoIndex];
-      const sourceBuffer = await this.loadAssetBuffer(sourcePhotoAsset);
+      const originalBuffer = await this.loadAssetBuffer(sourcePhotoAsset);
 
       // Select distinct perspective configuration based on index & photo
       const configIndex = (i + Math.floor(i / analyzedPhotos.length)) % PERSPECTIVE_CONFIGS.length;
@@ -624,8 +507,11 @@ export class AiStudioService {
 
       const promptText = `Professional real estate marketing photograph. Subject: ${roomTitle}. Framing: ${config.compositionType} (${config.cameraAngle}). Lighting: ${config.lightingStyle}. Highlight: ${featureHighlighted}. Strictly preserve the original property's layout, furniture, walls, doors, and architectural structures. Do not add or remove walls or furniture. Enhance clarity, professional architectural lighting, and presentation.`;
 
-      // Photographic Synthesis & Composition Engine (Sharp)
-      // Generates visually unique crops, focal points, and lighting while strictly preserving property identity
+      // Real AI image from the client's photo. Crop/grade/overlay below are applied to the AI result.
+      // If Gemini can't generate it (not configured, no billing, blocked), this throws a clear error.
+      const sourceBuffer = await this.generateAiShot(promptText, originalBuffer);
+
+      // Composition engine (sharp): unique crops and grades with duplicate prevention
       let finalImageBuffer: Buffer;
       let finalHash = '';
       let similarityScore = 0;
@@ -754,12 +640,12 @@ export class AiStudioService {
 
               <!-- Feature Highlight -->
               <text x="28" y="118" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" fill="#FDE68A">
-                &#10022; ${this.escapeXml(featureHighlighted.slice(0, 68))}
+                ${featureHighlighted ? `&#10022; ${this.escapeXml(featureHighlighted.slice(0, 68))}` : ''}
               </text>
 
               <!-- Real Estate Layout Verification Tag -->
               <text x="28" y="148" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="500" fill="#A1A1AA">
-                ${this.escapeXml(project.location?.city || 'Prime Location')} &#8226; Client Photo Reference Preserved &#8226; Original Property Identity
+                ${this.escapeXml([project.location?.city, 'AI-generated from client photo · Illustrative'].filter(Boolean).join(' • '))}
               </text>
             </g>
           </svg>
@@ -822,6 +708,7 @@ export class AiStudioService {
       }
 
       await fs.writeFile(fullPath, finalImageBuffer!);
+      await defaultStorage.persist(storageKey);
       usedHashes.push(finalHash);
 
       const publicUrl = defaultStorage.getUrl(storageKey);
@@ -859,6 +746,22 @@ export class AiStudioService {
       await fs.rm(tempDir, { recursive: true, force: true });
     } catch {
       // ignore
+    }
+
+    // Charge 1 credit only after every image was generated successfully
+    const newBalance = Math.max(0, (subscription.creditsRemaining || 0) - 1);
+    await Subscription.updateOne({ organizationId }, { $inc: { creditsRemaining: -1, creditsUsed: 1 } });
+    try {
+      await UsageLedger.create({
+        organizationId,
+        creditType: 'IMAGE_RENDER',
+        amount: 1,
+        balanceAfter: newBalance,
+        referenceId: project._id.toString(),
+        description: `Generated ${generatedImages.length} AI marketing images for ${project.name}`,
+      });
+    } catch (ledgerErr) {
+      logger.warn({ err: ledgerErr }, '[aiStudioService] Failed to record usage');
     }
 
     // Persist new AiStudioBatch version
@@ -903,7 +806,7 @@ export class AiStudioService {
     const existing = batch.images[imgIndex];
     const project = await Project.findById(batch.projectId);
     const pName = project?.name || 'Property';
-    const city = project?.location?.city || 'Prime Location';
+    const city = project?.location?.city || '';
 
     // Load original pristine photo buffer (never reuse the stamped image)
     let sourceBuffer: Buffer;
@@ -916,9 +819,10 @@ export class AiStudioService {
         projectId: batch.projectId,
         type: 'IMAGE',
       });
-      sourceBuffer = media ? await this.loadAssetBuffer(media) : await sharp({
-        create: { width: 1080, height: 1350, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 1 } },
-      }).png().toBuffer();
+      if (!media) {
+        throw AppError.notFound('The original photo for this image no longer exists. Upload project photos again.');
+      }
+      sourceBuffer = await this.loadAssetBuffer(media);
     }
 
     // Alternative photographic compositions to choose from for regeneration
@@ -974,6 +878,12 @@ export class AiStudioService {
     const selectedVariation =
       REGEN_VARIATIONS.find((v) => v.angle !== existing.cameraAngle) ||
       REGEN_VARIATIONS[Math.floor(Math.random() * REGEN_VARIATIONS.length)];
+
+    // Fresh AI image from the original photo for the new variation
+    sourceBuffer = await this.generateAiShot(
+      `Professional real estate marketing photograph. Subject: ${existing.category}. Framing: ${selectedVariation.angle}. Lighting: ${selectedVariation.lighting}. Strictly preserve the original property's layout, furniture, walls, doors, and architectural structures. Do not add or remove anything.`,
+      sourceBuffer
+    );
 
     // Re-render fresh asset
     const newStorageKey = `ai-studio/${organizationId.toString()}/${batch.projectId.toString()}/v${batch.version}/${existing.id}_regen_${Date.now().toString(36)}.png`;
@@ -1069,7 +979,7 @@ export class AiStudioService {
           </text>
 
           <text x="28" y="148" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="500" fill="#A1A1AA">
-            ${this.escapeXml(city)} &#8226; Client Photo Reference Preserved &#8226; Original Property Identity
+            ${this.escapeXml([city, 'AI-generated from client photo · Illustrative'].filter(Boolean).join(' • '))}
           </text>
         </g>
       </svg>
@@ -1081,6 +991,7 @@ export class AiStudioService {
       .toBuffer();
 
     await fs.writeFile(fullPath, regenBuf);
+    await defaultStorage.persist(newStorageKey);
     const newUrl = defaultStorage.getUrl(newStorageKey);
 
     // Compute perceptual hash and similarity check against remaining images
@@ -1217,7 +1128,7 @@ export class AiStudioService {
       const img = selectedImages[i];
       let buf: Buffer;
       try {
-        const localPath = defaultStorage.getAbsolutePath(img.storageKey);
+        const localPath = await defaultStorage.ensureLocal(img.storageKey);
         buf = await fs.readFile(localPath);
       } catch {
         buf = await sharp({
@@ -1265,12 +1176,21 @@ export class AiStudioService {
 
     // Text & branding graphic overlays
     const projName = (project.name || 'Luxury Property').replace(/['"|\\]/g, ' ');
-    const locName = (project.location?.city || 'Prime Location').replace(/['"|\\]/g, ' ');
+    const drawSafe = (t: string) => t.replace(/['"|\\:%]/g, ' ');
+    const locName = drawSafe(
+      [
+        project.location?.city,
+        project.reraNumber ? `RERA ${project.reraNumber}` : '',
+        'AI-generated - Illustrative',
+      ]
+        .filter(Boolean)
+        .join('  •  ')
+    );
 
     filterParts.push(
       `[vmerged]drawtext=text='${projName}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-280:shadowcolor=black:shadowx=2:shadowy=2,` +
       `drawtext=text='${styleSubtitle}':fontcolor=${primaryAccentColor}:fontsize=26:x=(w-text_w)/2:y=h-220:shadowcolor=black:shadowx=1:shadowy=1,` +
-      `drawtext=text='${locName}  •  Punjab RERA Verified':fontcolor=#E4E4E7:fontsize=22:x=(w-text_w)/2:y=h-175:shadowcolor=black:shadowx=1:shadowy=1[vout]`
+      `drawtext=text='${locName}':fontcolor=#E4E4E7:fontsize=22:x=(w-text_w)/2:y=h-175:shadowcolor=black:shadowx=1:shadowy=1[vout]`
     );
 
     const filterComplex = filterParts.join(';');
@@ -1300,7 +1220,7 @@ export class AiStudioService {
     logger.info({ cmd: [binary, ...ffmpegArgs].join(' ') }, 'Executing AI Reel generation via FFmpeg');
 
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(binary, ffmpegArgs);
+      const proc = spawnMediaTool(binary, ffmpegArgs);
       let stderr = '';
       proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
       proc.on('error', reject);
@@ -1312,7 +1232,7 @@ export class AiStudioService {
 
     // Extract high-quality poster frame from 1.0s
     await new Promise<void>((resolve) => {
-      const pProc = spawn(binary, [
+      const pProc = spawnMediaTool(binary, [
         '-ss', '1.0',
         '-i', outputFilePath,
         '-vframes', '1',
@@ -1331,6 +1251,8 @@ export class AiStudioService {
       // ignore
     }
 
+    await defaultStorage.persist(storageKey);
+    await defaultStorage.persist(posterStorageKey);
     const videoUrl = defaultStorage.getUrl(storageKey);
     const posterFrameUrl = defaultStorage.getUrl(posterStorageKey);
 

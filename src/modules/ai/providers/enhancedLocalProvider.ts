@@ -2,7 +2,7 @@ import sharp from 'sharp';
 import { logger } from '../../../config/logger.js';
 import { defaultStorage } from '../../../storage/localStorage.adapter.js';
 import {
-  IAIProvider,
+  ImageProvider,
   CaptionPromptData,
   GeneratedCaptionResult,
   GenerateImageOptions,
@@ -13,7 +13,7 @@ import {
   ImageAnalysisResult,
 } from './provider.interface.js';
 
-export class EnhancedLocalProvider implements IAIProvider {
+export class EnhancedLocalProvider implements ImageProvider {
   public readonly name = 'enhanced-local';
 
   public isConfigured(): boolean {

@@ -8,6 +8,7 @@ import { IProject } from '../../models/Project.js';
 import { IPropertyUnit } from '../../models/PropertyUnit.js';
 import { IBrandProfile } from '../../models/BrandProfile.js';
 import { IOrganization } from '../../models/Organization.js';
+import { AppError } from '../../utils/AppError.js';
 import { defaultStorage } from '../../storage/localStorage.adapter.js';
 
 export interface ShowcasePosterData {
@@ -331,7 +332,7 @@ export function buildShowcaseFacts(params: {
 export async function loadAssetBuffer(asset: IMediaAsset): Promise<Buffer> {
   if (asset.storageKey) {
     try {
-      const localPath = defaultStorage.getAbsolutePath(asset.storageKey);
+      const localPath = await defaultStorage.ensureLocal(asset.storageKey);
       if (fsSync.existsSync(localPath)) {
         return await fs.readFile(localPath);
       }
@@ -352,17 +353,10 @@ export async function loadAssetBuffer(asset: IMediaAsset): Promise<Buffer> {
     }
   }
 
-  // Fallback architectural gradient canvas
-  return sharp({
-    create: {
-      width: 1080,
-      height: 1080,
-      channels: 4,
-      background: { r: 19, g: 78, b: 74, alpha: 1 },
-    },
-  })
-    .png()
-    .toBuffer();
+  throw AppError.notFound(
+    `Photo "${asset.filename || asset._id}" could not be loaded from storage. Re-upload it and try again.`,
+    'MEDIA_FILE_MISSING'
+  );
 }
 
 /**

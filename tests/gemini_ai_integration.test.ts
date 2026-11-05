@@ -1,3 +1,5 @@
+import { setAIProviderOverride } from '../src/modules/ai/providers/index.js';
+import { MockAIProvider } from './fakes/fakeAIProvider.js';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { Express } from 'express';
@@ -222,9 +224,20 @@ describe('Gemini AI Provider & Cost Control Integration Tests', () => {
     });
 
     it('health endpoint returns configured status WITHOUT exposing GEMINI_API_KEY', async () => {
-      const res = await request(app)
-        .get('/api/v1/ai/health')
-        .set('Authorization', `Bearer ${ownerTokenA}`);
+      // Use the real Gemini provider (no key, so no network call) instead of the test fake
+      const originalKey = env.GEMINI_API_KEY;
+      (env as any).GEMINI_API_KEY = '';
+      setAIProviderOverride(null);
+      let res;
+      try {
+        res = await request(app)
+          .get('/api/v1/ai/health')
+          .set('Authorization', `Bearer ${ownerTokenA}`);
+      } finally {
+        (env as any).GEMINI_API_KEY = originalKey;
+        setAIProviderOverride(new MockAIProvider());
+      }
+      expect(res.body.data.configured).toBe(false);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -278,6 +291,7 @@ describe('Gemini AI Provider & Cost Control Integration Tests', () => {
       try {
         (env as any).GEMINI_API_KEY = '';
         (env as any).AI_PROVIDER = 'gemini';
+        setAIProviderOverride(null); // real Gemini provider, which has no key now
 
         // 1. Paid AI motion request fails cleanly
         const aiRes = await request(app)
@@ -285,8 +299,9 @@ describe('Gemini AI Provider & Cost Control Integration Tests', () => {
           .set('Authorization', `Bearer ${ownerTokenA}`)
           .send({ mode: 'ai_motion' });
 
-        expect(aiRes.status).toBe(400);
-        expect(aiRes.body.error.message).toContain('AI enhancement: not configured');
+        expect(aiRes.status).toBe(503);
+        expect(aiRes.body.error.code).toBe('AI_NOT_CONFIGURED');
+        expect(aiRes.body.error.message).toContain('GEMINI_API_KEY');
 
         // 2. Free Template reel request succeeds normally
         const templateRes = await request(app)
@@ -299,6 +314,7 @@ describe('Gemini AI Provider & Cost Control Integration Tests', () => {
       } finally {
         (env as any).GEMINI_API_KEY = originalKey;
         (env as any).AI_PROVIDER = originalProvider;
+        setAIProviderOverride(new MockAIProvider());
       }
     });
   });
@@ -507,7 +523,7 @@ describe('Gemini AI Provider & Cost Control Integration Tests', () => {
           motionPrompt: 'Slow cinematic camera move only.',
           durationSeconds: 5,
         })
-      ).rejects.toThrow(/blocked by provider/i);
+      ).rejects.toMatchObject({ code: 'AI_SAFETY_BLOCKED' });
     });
 
     it('retries with exponential backoff on 429 rate limit errors before succeeding', async () => {
