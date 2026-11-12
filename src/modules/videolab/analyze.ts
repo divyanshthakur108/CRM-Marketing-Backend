@@ -8,6 +8,9 @@ import { escapeFilterPath, probeMedia, runFfmpeg } from '../../utils/ffmpeg.js';
 import { AppError } from '../../utils/AppError.js';
 import { env } from '../../config/env.js';
 import { ClipShot, SHOT_CATEGORIES, ShotCategory, TimeRange } from './recipe.js';
+import { getCachedAnalysis, setCachedAnalysis } from './cacheModel.js';
+import { upsertContentFromAnalysis } from './memoryModel.js';
+import { logger } from '../../config/logger.js';
 
 /** Clips are understood up to this length (longer clips: only the start is used) */
 export const MAX_ANALYZE_SECONDS = 180;
@@ -44,6 +47,7 @@ export interface ClipAnalysis {
   model: string;
   ms: number;
   steps: AnalysisStep[];
+  fromCache?: boolean;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -54,7 +58,21 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * 2. Gemini watches the preview and describes every shot (room type, quality, problems, speech, best part).
  * 3. Shot edges are snapped to the exact hard cuts; a thumbnail is taken from the middle of every shot.
  */
-export async function analyzeClip(clipKey: string): Promise<ClipAnalysis> {
+export async function analyzeClip(clipKey: string, force = false): Promise<ClipAnalysis> {
+  if (!force) {
+    const cached = await getCachedAnalysis<ClipAnalysis>('ANALYZE', clipKey, '');
+    if (cached) {
+      const result: ClipAnalysis = {
+        ...cached,
+        fromCache: true,
+      };
+      upsertContentFromAnalysis(result).catch((err) =>
+        logger.warn({ err, clipKey }, 'Content memory upsert error (cache)')
+      );
+      return result;
+    }
+  }
+
   const started = Date.now();
   const steps: AnalysisStep[] = [];
   const timed = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
@@ -93,11 +111,11 @@ export async function analyzeClip(clipKey: string): Promise<ClipAnalysis> {
     await timed('Find hard cuts and measure loudness (ffmpeg scene detection + astats)', () =>
       ff([
         '-i', proxy,
-        '-map', '0:v', '-vf', `select='gt(scene,0.30)',metadata=print:file=${escapeFilterPath(scenesFile)}`, '-f', 'null', '-',
+        '-map', '0:v', '-vf', `select='gt(scene,0.30)',metadata=print:file='${escapeFilterPath(scenesFile)}'`, '-f', 'null', '-',
         ...(probe.hasAudio
           ? [
               '-map', '0:a',
-              '-af', `asetnsamples=n=2048,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=${escapeFilterPath(levelsFile)}`,
+              '-af', `asetnsamples=n=2048,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file='${escapeFilterPath(levelsFile)}'`,
               '-f', 'null', '-',
             ]
           : []),
@@ -114,7 +132,7 @@ export async function analyzeClip(clipKey: string): Promise<ClipAnalysis> {
       await timed(`Find pauses (quieter than ${threshold} dB for 0.2 s or more)`, () =>
         ff([
           '-i', proxy, '-vn',
-          '-af', `silencedetect=noise=${threshold}dB:d=0.2,ametadata=print:file=${escapeFilterPath(silenceFile)}`,
+          '-af', `silencedetect=noise=${threshold}dB:d=0.2,ametadata=print:file='${escapeFilterPath(silenceFile)}'`,
           '-f', 'null', '-',
         ])
       );
@@ -148,7 +166,7 @@ export async function analyzeClip(clipKey: string): Promise<ClipAnalysis> {
       return out;
     });
 
-    return {
+    const result: ClipAnalysis = {
       clipKey,
       durationSeconds: round2(probe.durationSeconds),
       analyzedSeconds,
@@ -159,7 +177,17 @@ export async function analyzeClip(clipKey: string): Promise<ClipAnalysis> {
       model: env.GEMINI_TEXT_MODEL,
       ms: Date.now() - started,
       steps,
+      fromCache: false,
     };
+
+    if (result.shots.length > 0) {
+      await setCachedAnalysis('ANALYZE', clipKey, '', result);
+      await upsertContentFromAnalysis(result).catch((err) =>
+        logger.warn({ err, clipKey }, 'Content memory upsert error (fresh)')
+      );
+    }
+
+    return result;
   } finally {
     await fsp.rm(scratch, { recursive: true, force: true }).catch(() => undefined);
   }

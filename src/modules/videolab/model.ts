@@ -1,7 +1,9 @@
 import { Schema, model, Document, Types } from 'mongoose';
 import type { EditRecipe, LabInput } from './recipe.js';
 import type { RenderStep } from './ffmpegRenderer.js';
+import type { QualityCheckResult } from './qualityCheck.js';
 
+export type { QualityCheckResult };
 export type LabRenderStatus = 'QUEUED' | 'RENDERING' | 'DONE' | 'FAILED';
 
 /** One Video Lab render (admin testing only; not linked to any organization) */
@@ -16,6 +18,7 @@ export interface IVideoLabRender extends Document {
   outputUrl?: string;
   posterUrl?: string;
   durationSeconds?: number;
+  qualityCheck?: QualityCheckResult;
   steps: RenderStep[];
   error?: string;
   renderMs?: number;
@@ -42,6 +45,7 @@ const videoLabRenderSchema = new Schema<IVideoLabRender>(
     outputUrl: String,
     posterUrl: String,
     durationSeconds: Number,
+    qualityCheck: { type: Schema.Types.Mixed },
     steps: { type: [stepSchema], default: [] },
     error: String,
     renderMs: Number,

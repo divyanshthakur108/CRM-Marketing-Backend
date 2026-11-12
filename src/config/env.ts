@@ -29,7 +29,7 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().optional().default(''),
   // 'none' turns AI off; requests then fail with a clear "not configured" error
   AI_PROVIDER: z.enum(['gemini', 'none']).default('gemini'),
-  GEMINI_TEXT_MODEL: z.string().default('gemini-3.5-flash'),
+  GEMINI_TEXT_MODEL: z.string().default('gemini-3.5-flash-lite'),
   GEMINI_IMAGE_MODEL: z.string().default('gemini-3.1-flash-image'),
   IMAGE_TO_IMAGE_PROVIDER: z.enum(['fal', 'replicate', 'gemini', 'local', 'auto']).default('auto'),
   FAL_KEY: z.string().optional().default(''),
@@ -37,6 +37,7 @@ const envSchema = z.object({
   CONTROLNET_MODEL: z.string().default('fal-ai/flux/dev/image-to-image'),
   GEMINI_VIDEO_MODEL: z.string().default('veo-2.0-generate-001'),
   AI_DAILY_COST_CAP_USD: z.coerce.number().default(25.0),
+  GEMINI_DAILY_LIMIT: z.coerce.number().default(20),
   AI_MAX_VIDEO_SECONDS_PER_REEL: z.coerce.number().default(25),
   REEL_MUSIC_PATH: z.string().optional(),
   FFMPEG_PATH: z.string().optional(),
@@ -76,7 +77,7 @@ const parseEnv = () => {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
     // Legacy value 'mock' is treated as 'none': there is no fake AI mode any more
     AI_PROVIDER: process.env.AI_PROVIDER === 'mock' ? 'none' : ((process.env.AI_PROVIDER as 'gemini' | 'none') || 'gemini'),
-    GEMINI_TEXT_MODEL: process.env.GEMINI_TEXT_MODEL || 'gemini-3.5-flash',
+    GEMINI_TEXT_MODEL: process.env.GEMINI_TEXT_MODEL || 'gemini-3.5-flash-lite',
     GEMINI_IMAGE_MODEL: process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image',
     IMAGE_TO_IMAGE_PROVIDER: (process.env.IMAGE_TO_IMAGE_PROVIDER as 'fal' | 'replicate' | 'gemini' | 'local' | 'auto') || 'auto',
     FAL_KEY: process.env.FAL_KEY || '',

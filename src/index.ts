@@ -40,9 +40,10 @@ async function bootstrap() {
 
   const app = createApp();
 
-  const server = app.listen(PORT, () => {
-    logger.info(`Backend API server running in ${env.NODE_ENV} mode on http://localhost:${PORT}`);
-    logger.info(`Health check available at http://localhost:${PORT}/api/v1/health`);
+  const HOST = process.env.HOST || '127.0.0.1';
+  const server = app.listen(PORT, HOST, () => {
+    logger.info(`Backend API server running in ${env.NODE_ENV} mode on http://${HOST}:${PORT}`);
+    logger.info(`Health check available at http://${HOST}:${PORT}/api/v1/health`);
   });
 
   const handleShutdown = async (signal: string) => {

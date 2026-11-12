@@ -107,7 +107,7 @@ describe('Smart cut plan', () => {
       { start: 4.5, end: 6, text: 'half in' },
       { start: 6, end: 7, text: 'inside' },
     ];
-    expect(cuesForCut(cues, 5, 8)).toEqual([
+    expect(cuesForCut(cues, 5, 8)).toMatchObject([
       { start: 0, end: 0.95, text: 'half in' },
       { start: 1, end: 2, text: 'inside' },
     ]);

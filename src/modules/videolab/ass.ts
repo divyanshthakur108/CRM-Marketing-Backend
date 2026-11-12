@@ -2,7 +2,7 @@
  * Builds ASS subtitle files. ASS is rendered by libass + HarfBuzz, which shapes Hindi (Devanagari)
  * and Punjabi (Gurmukhi) correctly, unlike ffmpeg's drawtext.
  */
-import { CaptionCue, CaptionLanguage, CaptionStyle } from './recipe.js';
+import { CaptionCue, CaptionLanguage, CaptionStyle, RecipeHook, splitCueIntoWords } from './recipe.js';
 
 const FONT_LATIN = 'Noto Sans';
 const FONT_DEVANAGARI = 'Noto Sans Devanagari';
@@ -85,35 +85,156 @@ const EVENTS = `[Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
 
 /**
- * Captions (evenly timed over the video) + optional text watermark for the main video.
+ * Captions (evenly timed over the video or timed from speech) + optional text watermark for the main video.
+ * Supports POP (bouncing word highlighting), KARAOKE (progressive word fill), SLIDE (gliding entrance),
+ * and MINIMAL (clean fade), with brand accent color on spoken words and keywords.
  * Returns null when there is nothing to draw.
  */
 export function buildMainAss(params: {
   durationSeconds: number;
-  captions: { language: CaptionLanguage; style: CaptionStyle; lines: string[] } | null;
+  captions: {
+    language: CaptionLanguage;
+    style: CaptionStyle;
+    lines: string[];
+    keywords?: string[];
+  } | null;
   /** Timed captions on the merged timeline (from speech). When given, these are used instead of `lines`. */
   cues?: CaptionCue[];
   watermarkText?: string;
+  accentHex?: string;
+  hook?: RecipeHook | null;
 }): string | null {
-  const { durationSeconds, captions, cues, watermarkText } = params;
+  const { durationSeconds, captions, cues, watermarkText, accentHex, hook } = params;
   const events: string[] = [];
 
+  const accent = assColor(accentHex || '#C9A227');
+  const white = '&H00FFFFFF';
+  const dimmed = '&H70FFFFFF';
+
   if (captions) {
-    const style = captions.style === 'BOXED' ? 'CaptionBoxed' : 'CaptionOutline';
+    const rawStyle = captions.style || 'MINIMAL';
+    const style: CaptionStyle =
+      rawStyle === 'BOXED' ||
+      rawStyle === 'OUTLINE' ||
+      rawStyle === 'POP' ||
+      rawStyle === 'KARAOKE' ||
+      rawStyle === 'SLIDE' ||
+      rawStyle === 'MINIMAL'
+        ? rawStyle
+        : 'MINIMAL';
+
     const timed: CaptionCue[] = cues?.length
       ? cues
       : captions.lines.map((text, i, all) => {
           // Typed lines: spread evenly over the video
           const per = durationSeconds / all.length;
-          return { start: i * per, end: (i + 1) * per - 0.05, text };
+          const cueObj: CaptionCue = { start: i * per, end: (i + 1) * per - 0.05, text };
+          cueObj.words = splitCueIntoWords(cueObj, captions.keywords);
+          return cueObj;
         });
+
     for (const cue of timed) {
       const text = escapeAssText(cue.text);
       if (!text || cue.start >= durationSeconds) continue;
-      const end = Math.min(cue.end, durationSeconds);
-      events.push(
-        `Dialogue: 1,${formatAssTime(cue.start)},${formatAssTime(end)},${style},,0,0,0,,{\\fad(120,120)}${withFontRuns(text, captions.language)}`
-      );
+      const cueEnd = Math.min(cue.end, durationSeconds);
+      const words = cue.words && cue.words.length ? cue.words : splitCueIntoWords(cue, captions.keywords);
+
+      if (style === 'POP') {
+        if (!words.length || words.length === 1) {
+          const w = words[0];
+          const wText = escapeAssText(w?.text || cue.text);
+          const popColor = w?.isKeyword ? accent : accent;
+          const popTag = `{\\c${popColor}\\fscx120\\fscy120\\t(0,100,\\fscx100\\fscy100)}`;
+          events.push(
+            `Dialogue: 1,${formatAssTime(cue.start)},${formatAssTime(cueEnd)},CaptionPop,,0,0,0,,${popTag}${withFontRuns(wText, captions.language)}{\\fscx100\\fscy100\\c${white}}`
+          );
+        } else {
+          for (let i = 0; i < words.length; i++) {
+            const wStart = Math.max(cue.start, words[i].start);
+            const wEnd = Math.min(cueEnd, words[i].end);
+            if (wEnd <= wStart) continue;
+
+            const lineSpans = words.map((w, j) => {
+              const safeText = escapeAssText(w.text);
+              const shaped = withFontRuns(safeText, captions.language);
+              if (j === i) {
+                const popScale = w.isKeyword
+                  ? '\\fscx122\\fscy122\\t(0,120,\\fscx106\\fscy106)'
+                  : '\\fscx115\\fscy115\\t(0,100,\\fscx100\\fscy100)';
+                return `{\\c${accent}${popScale}}${shaped}{\\fscx100\\fscy100\\c${white}}`;
+              } else if (w.isKeyword) {
+                return `{\\c${accent}}${shaped}{\\c${white}}`;
+              } else {
+                return shaped;
+              }
+            });
+
+            events.push(
+              `Dialogue: 1,${formatAssTime(wStart)},${formatAssTime(wEnd)},CaptionPop,,0,0,0,,${lineSpans.join(' ')}`
+            );
+          }
+        }
+      } else if (style === 'KARAOKE') {
+        if (!words.length || words.length === 1) {
+          const w = words[0];
+          const wText = escapeAssText(w?.text || cue.text);
+          events.push(
+            `Dialogue: 1,${formatAssTime(cue.start)},${formatAssTime(cueEnd)},CaptionKaraoke,,0,0,0,,{\\c${accent}}${withFontRuns(wText, captions.language)}{\\c${white}}`
+          );
+        } else {
+          for (let i = 0; i < words.length; i++) {
+            const wStart = Math.max(cue.start, words[i].start);
+            const wEnd = Math.min(cueEnd, words[i].end);
+            if (wEnd <= wStart) continue;
+
+            const lineSpans = words.map((w, j) => {
+              const safeText = escapeAssText(w.text);
+              const shaped = withFontRuns(safeText, captions.language);
+              if (j < i) {
+                const col = w.isKeyword ? accent : white;
+                return `{\\c${col}}${shaped}{\\c${white}}`;
+              } else if (j === i) {
+                return `{\\c${accent}\\fscx108\\fscy108}${shaped}{\\fscx100\\fscy100\\c${white}}`;
+              } else {
+                return `{\\c${dimmed}}${shaped}{\\c${white}}`;
+              }
+            });
+
+            events.push(
+              `Dialogue: 1,${formatAssTime(wStart)},${formatAssTime(wEnd)},CaptionKaraoke,,0,0,0,,${lineSpans.join(' ')}`
+            );
+          }
+        }
+      } else if (style === 'SLIDE') {
+        const lineSpans = (words.length ? words : [{ text: cue.text, start: cue.start, end: cueEnd }]).map((w) => {
+          const safeText = escapeAssText(w.text);
+          const shaped = withFontRuns(safeText, captions.language);
+          if (w.isKeyword) {
+            return `{\\c${accent}}${shaped}{\\c${white}}`;
+          }
+          return shaped;
+        });
+
+        events.push(
+          `Dialogue: 1,${formatAssTime(cue.start)},${formatAssTime(cueEnd)},CaptionSlide,,0,0,0,,{\\move(540,1540,540,1500,0,200)\\fad(120,100)}${lineSpans.join(' ')}`
+        );
+      } else {
+        // MINIMAL (and legacy BOXED / OUTLINE)
+        const styleName =
+          style === 'BOXED' ? 'CaptionBoxed' : style === 'OUTLINE' ? 'CaptionOutline' : 'CaptionMinimal';
+        const lineSpans = (words.length ? words : [{ text: cue.text, start: cue.start, end: cueEnd }]).map((w) => {
+          const safeText = escapeAssText(w.text);
+          const shaped = withFontRuns(safeText, captions.language);
+          if (w.isKeyword) {
+            return `{\\c${accent}}${shaped}{\\c${white}}`;
+          }
+          return shaped;
+        });
+
+        events.push(
+          `Dialogue: 1,${formatAssTime(cue.start)},${formatAssTime(cueEnd)},${styleName},,0,0,0,,{\\fad(120,120)}${lineSpans.join(' ')}`
+        );
+      }
     }
   }
 
@@ -124,12 +245,28 @@ export function buildMainAss(params: {
     );
   }
 
+  if (hook && hook.text?.trim()) {
+    const text = escapeAssText(hook.text);
+    const start = formatAssTime(hook.startSeconds);
+    const end = formatAssTime(hook.endSeconds);
+    const anim = `{\\fscx115\\fscy115\\t(0,140,\\fscx100\\fscy100)\\fad(120,200)}`;
+    events.push(
+      `Dialogue: 2,${start},${end},HookTitle,,0,0,0,,${anim}${withFontRuns(text, captions?.language)}`
+    );
+  }
+
   if (!events.length) return null;
 
   const styles = [
+    // Top-third animated text hook (MarginV 380, Alignment 8 = top-center, PlayResY 1920)
+    `Style: HookTitle,${FONT_LATIN},74,${accent},&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,1,0,1,5,2,8,60,60,380,1`,
     // Bottom-centre captions, kept above Instagram's bottom UI (MarginV 420)
-    `Style: CaptionBoxed,${FONT_LATIN},58,&H00FFFFFF,&H000000FF,&H59000000,&H59000000,-1,0,0,0,100,100,0,0,4,16,0,2,90,90,420,1`,
-    `Style: CaptionOutline,${FONT_LATIN},62,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,5,2,2,90,90,420,1`,
+    `Style: CaptionBoxed,${FONT_LATIN},58,${white},&H000000FF,&H59000000,&H59000000,-1,0,0,0,100,100,0,0,4,16,0,2,90,90,420,1`,
+    `Style: CaptionOutline,${FONT_LATIN},62,${white},&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,5,2,2,90,90,420,1`,
+    `Style: CaptionPop,${FONT_LATIN},64,${white},&H000000FF,&H00000000,&H70000000,-1,0,0,0,100,100,0,0,1,6,2,2,90,90,420,1`,
+    `Style: CaptionKaraoke,${FONT_LATIN},62,${white},&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,5,2,2,90,90,420,1`,
+    `Style: CaptionSlide,${FONT_LATIN},58,${white},&H000000FF,&H59000000,&H59000000,-1,0,0,0,100,100,0,0,4,16,0,2,90,90,420,1`,
+    `Style: CaptionMinimal,${FONT_LATIN},60,${white},&H000000FF,&H00000000,&H50000000,-1,0,0,0,100,100,0,0,1,4,1,2,90,90,420,1`,
     // Top-right org name when there's no logo
     `Style: Watermark,${FONT_LATIN},34,&H33FFFFFF,&H000000FF,&H80000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,9,0,48,72,1`,
   ];

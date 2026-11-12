@@ -2,21 +2,53 @@
  * Engine-independent "edit recipe" for one reel.
  * ffmpeg renders it today; Shotstack / Creatomate / Remotion adapters can render the same recipe later.
  */
-import { buildCutPlan, CutStyle } from './cutPlan.js';
+import { buildCutPlan, type CutStyle } from './cutPlan.js';
+import { buildBrollPlan, extractSpeechBlocks, type RecipeOverlay } from './brollPlan.js';
+import { planSmartEditsWithDirector } from './editDirector.js';
+import {
+  RecipeHook,
+  RecipeZoom,
+  CreatorStyleOptions,
+  SHORT_CROSSFADE_SECONDS,
+  SAME_CLIP_TRANSITION_SECONDS,
+  HOOK_START_SECONDS,
+  HOOK_END_SECONDS,
+  buildHookText,
+  planZooms,
+} from './creatorStyle.js';
+
+export type { RecipeOverlay, RecipeHook, RecipeZoom, CreatorStyleOptions };
+export {
+  SHORT_CROSSFADE_SECONDS,
+  SAME_CLIP_TRANSITION_SECONDS,
+  HOOK_START_SECONDS,
+  HOOK_END_SECONDS,
+  buildHookText,
+  planZooms,
+};
 
 export type CaptionLanguage = 'hi' | 'pa' | 'en' | 'hinglish';
-export type CaptionStyle = 'BOXED' | 'OUTLINE';
+export type CaptionStyle = 'POP' | 'KARAOKE' | 'SLIDE' | 'MINIMAL' | 'BOXED' | 'OUTLINE';
 export type EndCardTemplate = 'HERITAGE_LUXURY' | 'HIGH_GROWTH_ROI';
 /** 'speech' = captions come from what is said in each clip; 'typed' = lines typed by the admin */
 export type CaptionSource = 'speech' | 'typed';
 /** 'smart' = AI watched the clips and picks the best shots; 'whole' = use each clip from the start */
 export type EditingMode = 'smart' | 'whole';
 
+/** One word inside a caption cue, with interpolated timing and keyword detection */
+export interface CueWord {
+  text: string;
+  start: number;
+  end: number;
+  isKeyword?: boolean;
+}
+
 /** One caption on screen. Times are in seconds from the start of its clip (or cut). */
 export interface CaptionCue {
   start: number;
   end: number;
   text: string;
+  words?: CueWord[];
 }
 
 export const SHOT_CATEGORIES = [
@@ -85,10 +117,16 @@ export interface LabInput {
   logoKey?: string;
   musicKey?: string;
   facts: LabFacts;
-  captions: { language: CaptionLanguage; source?: CaptionSource; lines: string[] };
+  captions: { language: CaptionLanguage; source?: CaptionSource; lines: string[]; keywords?: string[] };
   editing?: EditingMode;
   /** Smart cut: wanted length of the video before the end card */
   targetSeconds?: number;
+  /** Creator-style editing options (R4): hook text and punch-in zooms */
+  creatorStyle?: CreatorStyleOptions;
+  /** Stabilization (R3): vidstab for shaky clips */
+  stabilizeShaky?: boolean;
+  /** Colour matching (R3): match brightness across clips */
+  matchColours?: boolean;
 }
 
 /** One piece of a source clip, placed on the final timeline in recipe order */
@@ -100,19 +138,36 @@ export interface RecipeCut {
   /** Seconds into the source clip; omitted = until the clip ends (max output.maxSecondsPerClip) */
   end?: number;
   label?: string;
+  /** Issues on this cut (e.g. shaky, blurry, too_dark) */
+  issues?: string[];
   /** Speech captions inside this cut, in seconds from the start of the cut */
   cues?: CaptionCue[];
 }
 
 export interface EditRecipe {
-  version: 2;
+  version: 2 | 3;
   variant: { index: number; label: string };
   output: { width: 1080; height: 1920; fps: 30; maxSecondsPerClip: number };
   editing: EditingMode;
   targetSeconds?: number;
   cuts: RecipeCut[];
+  overlays?: RecipeOverlay[];
   transitionSeconds: number;
-  captions: { language: CaptionLanguage; style: CaptionStyle; source: CaptionSource; lines: string[] } | null;
+  /** Creator-style hook title in first 2.5s */
+  hook?: RecipeHook | null;
+  /** Creator-style punch-in presenter zooms */
+  zooms?: RecipeZoom[];
+  /** Stabilization toggle (R3) */
+  stabilizeShaky?: boolean;
+  /** Colour matching toggle (R3) */
+  matchColours?: boolean;
+  captions: {
+    language: CaptionLanguage;
+    style: CaptionStyle;
+    source: CaptionSource;
+    lines: string[];
+    keywords?: string[];
+  } | null;
   watermark: { logoKey?: string; text?: string };
   endCard: {
     template: EndCardTemplate;
@@ -142,9 +197,9 @@ const VARIANT_PRESETS: Array<{
   template: EndCardTemplate;
   musicVolume: number;
 }> = [
-  { order: 'original', cutStyle: 'STORY', style: 'BOXED', template: 'HERITAGE_LUXURY', musicVolume: 0.22 },
-  { order: 'rotated', cutStyle: 'HOOK_FIRST', style: 'OUTLINE', template: 'HIGH_GROWTH_ROI', musicVolume: 0.16 },
-  { order: 'reversed', cutStyle: 'FAST', style: 'OUTLINE', template: 'HERITAGE_LUXURY', musicVolume: 0.3 },
+  { order: 'original', cutStyle: 'STORY', style: 'POP', template: 'HERITAGE_LUXURY', musicVolume: 0.22 },
+  { order: 'rotated', cutStyle: 'HOOK_FIRST', style: 'KARAOKE', template: 'HIGH_GROWTH_ROI', musicVolume: 0.16 },
+  { order: 'reversed', cutStyle: 'FAST', style: 'SLIDE', template: 'HERITAGE_LUXURY', musicVolume: 0.3 },
 ];
 
 const CUT_STYLE_LABEL: Record<CutStyle, string> = {
@@ -157,6 +212,12 @@ export const MAX_VARIANTS = VARIANT_PRESETS.length;
 export const DEFAULT_TARGET_SECONDS = 30;
 const MAX_SECONDS_PER_CLIP = 25;
 
+export interface VariantOption {
+  captionStyle?: CaptionStyle;
+}
+
+export type VariantInput = number | VariantOption[];
+
 const clean = (value?: string): string | undefined => {
   const v = value?.trim();
   return v ? v : undefined;
@@ -168,8 +229,32 @@ function orderClips<T>(clips: T[], order: ClipOrder): T[] {
   return [...clips].reverse();
 }
 
-export function buildVariants(input: LabInput, count: number): EditRecipe[] {
+function captionStyleLabel(style: CaptionStyle): string {
+  switch (style) {
+    case 'POP':
+      return 'pop';
+    case 'KARAOKE':
+      return 'karaoke';
+    case 'SLIDE':
+      return 'slide';
+    case 'BOXED':
+      return 'boxed';
+    case 'OUTLINE':
+      return 'outline';
+    case 'MINIMAL':
+    default:
+      return 'minimal';
+  }
+}
+
+function assembleVariants(
+  input: LabInput,
+  optionsOrCount: VariantInput = 1,
+  overlaysOverride?: RecipeOverlay[]
+): EditRecipe[] {
+  const count = typeof optionsOrCount === 'number' ? optionsOrCount : optionsOrCount.length;
   const total = Math.max(1, Math.min(MAX_VARIANTS, Math.floor(count) || 1));
+  const variantOverrides: VariantOption[] = Array.isArray(optionsOrCount) ? optionsOrCount : [];
   const facts = {
     orgName: input.facts.orgName.trim(),
     projectName: input.facts.projectName.trim(),
@@ -180,51 +265,151 @@ export function buildVariants(input: LabInput, count: number): EditRecipe[] {
   const lines = source === 'typed' ? input.captions.lines.map((l) => l.trim()).filter(Boolean) : [];
   const clips: LabClip[] = input.clips.map((c) => ({ ...c, cues: source === 'speech' ? cleanCues(c.cues) : [] }));
   const smart = input.editing === 'smart' && clips.some((c) => c.shots?.some((s) => s.keep));
+  const hasSpeechShots = clips.some((c) => c.shots?.some((s) => s.keep && s.hasSpeech));
+  const hasBrollShots = clips.some((c) => c.shots?.some((s) => s.keep && !s.hasSpeech && s.quality >= 3));
+  const useBrollOverlays = smart && hasSpeechShots && hasBrollShots;
   const targetSeconds = Math.max(8, Math.min(90, input.targetSeconds || DEFAULT_TARGET_SECONDS));
-  const transitionSeconds = smart ? 0.25 : 0.4;
+  const transitionSeconds = smart ? SHORT_CROSSFADE_SECONDS : 0.25;
+
+  let commonOverlays: RecipeOverlay[] | undefined = overlaysOverride;
+  let commonCuts: RecipeCut[] | undefined;
+
+  if (useBrollOverlays) {
+    commonCuts = extractSpeechBlocks(clips, targetSeconds).map((seg) => {
+      const clip = clips.find((c) => c.key === seg.key)!;
+      const endSec = seg.end ?? clip.durationSeconds ?? (seg.start + 10);
+      const cues = cuesForCut(clip.cues, seg.start, endSec, input.captions.keywords);
+      const matchingShot = clip.shots?.find(
+        (s) => Math.abs(s.start - seg.start) < 0.2 || (seg.start >= s.start && seg.start <= s.end)
+      );
+      const issues = matchingShot?.issues || [];
+      return {
+        key: seg.key,
+        ...(clip.filename ? { filename: clip.filename } : {}),
+        start: seg.start,
+        end: endSec,
+        label: seg.label,
+        ...(issues.length ? { issues } : {}),
+        ...(cues.length ? { cues } : {}),
+      };
+    });
+
+    if (commonOverlays === undefined) {
+      const segmentDurations = commonCuts.map((c) => (c.end ?? 10) - c.start);
+      const speechTimelineCues = placeCuesOnTimeline(commonCuts, segmentDurations, transitionSeconds, input.captions.keywords);
+      const totalNarration = Math.max(1, segmentDurations.reduce((sum, d) => sum + d, 0) - transitionSeconds * (commonCuts.length - 1));
+
+      const plannedOverlays = buildBrollPlan({
+        clips,
+        speechCues: speechTimelineCues,
+        totalNarrationDuration: totalNarration,
+      });
+      if (plannedOverlays.length) {
+        commonOverlays = plannedOverlays;
+      }
+    }
+  }
 
   return VARIANT_PRESETS.slice(0, total).map((preset, index) => {
-    const cuts: RecipeCut[] = smart
-      ? buildCutPlan(clips, { targetSeconds, style: preset.cutStyle, transitionSeconds }).map((seg) => {
-          const clip = clips.find((c) => c.key === seg.key)!;
-          const cues = cuesForCut(clip.cues, seg.start, seg.end);
-          return {
-            key: seg.key,
-            ...(clip.filename ? { filename: clip.filename } : {}),
-            start: seg.start,
-            end: seg.end,
-            label: seg.label,
-            ...(cues.length ? { cues } : {}),
-          };
-        })
-      : orderClips(clips, preset.order).map((clip) => {
-          const cues = cleanCues(clip.cues, MAX_SECONDS_PER_CLIP);
-          return {
-            key: clip.key,
-            ...(clip.filename ? { filename: clip.filename } : {}),
-            start: 0,
-            ...(cues.length ? { cues } : {}),
-          };
-        });
+    const override = variantOverrides[index];
+    const effectiveCaptionStyle = override?.captionStyle || preset.style;
+    let overlays: RecipeOverlay[] | undefined = commonOverlays && commonOverlays.length ? commonOverlays : undefined;
+    let cuts: RecipeCut[];
+
+    if (useBrollOverlays && commonCuts) {
+      cuts = commonCuts;
+    } else if (smart) {
+      cuts = buildCutPlan(clips, { targetSeconds, style: preset.cutStyle, transitionSeconds }).map((seg) => {
+        const clip = clips.find((c) => c.key === seg.key)!;
+        const cues = cuesForCut(clip.cues, seg.start, seg.end);
+        const matchingShot = clip.shots?.find(
+          (s) => Math.abs(s.start - seg.start) < 0.2 || (seg.start >= s.start && seg.start <= s.end)
+        );
+        const issues = matchingShot?.issues || [];
+        return {
+          key: seg.key,
+          ...(clip.filename ? { filename: clip.filename } : {}),
+          start: seg.start,
+          end: seg.end,
+          label: seg.label,
+          ...(issues.length ? { issues } : {}),
+          ...(cues.length ? { cues } : {}),
+        };
+      });
+    } else {
+      cuts = orderClips(clips, preset.order).map((clip) => {
+        const cues = cleanCues(clip.cues, MAX_SECONDS_PER_CLIP);
+        const allIssues = Array.from(new Set(clip.shots?.flatMap((s) => s.issues || []) || []));
+        return {
+          key: clip.key,
+          ...(clip.filename ? { filename: clip.filename } : {}),
+          start: 0,
+          ...(allIssues.length ? { issues: allIssues } : {}),
+          ...(cues.length ? { cues } : {}),
+        };
+      });
+    }
 
     const hasCaptions = source === 'speech' ? cuts.some((c) => c.cues?.length) : lines.length > 0;
     const labelParts = [
       `Variant ${String.fromCharCode(65 + index)}`,
-      smart ? `smart cut, ${CUT_STYLE_LABEL[preset.cutStyle]}` : clips.length > 1 ? `${preset.order} clip order` : null,
-      hasCaptions ? `${preset.style === 'BOXED' ? 'boxed' : 'outline'} ${source === 'speech' ? 'speech ' : ''}captions` : null,
+      overlays?.length
+        ? `smart cut with ${overlays.length} B-roll overlay(s)`
+        : smart
+          ? `smart cut, ${CUT_STYLE_LABEL[preset.cutStyle]}`
+          : clips.length > 1
+            ? `${preset.order} clip order`
+            : null,
+      hasCaptions ? `${captionStyleLabel(effectiveCaptionStyle)} ${source === 'speech' ? 'speech ' : ''}captions` : null,
       preset.template === 'HERITAGE_LUXURY' ? 'Heritage end card' : 'High-Growth end card',
       input.musicKey ? `music ${Math.round(preset.musicVolume * 100)}%` : null,
     ].filter(Boolean);
 
+    const hookEnabled = input.creatorStyle?.hookText !== false;
+    const zoomEnabled = input.creatorStyle?.punchInZoom !== false;
+
+    const cutDurs = cuts.map((c) => (c.end ?? 10) - c.start);
+    const speechTimelineCues = placeCuesOnTimeline(cuts, cutDurs, transitionSeconds, input.captions.keywords);
+    const totalNarration = Math.max(1, cutDurs.reduce((sum, d) => sum + d, 0) - transitionSeconds * Math.max(0, cuts.length - 1));
+
+    let hook: RecipeHook | null = null;
+    if (hookEnabled) {
+      const hookText = buildHookText({
+        facts,
+        keywords: input.captions.keywords,
+        cues: speechTimelineCues.length ? speechTimelineCues : cuts.flatMap((c) => c.cues || []),
+      });
+      hook = {
+        text: hookText,
+        startSeconds: HOOK_START_SECONDS,
+        endSeconds: HOOK_END_SECONDS,
+      };
+    }
+
+    const plannedZooms = zoomEnabled
+      ? planZooms({
+          cuts,
+          overlays,
+          speechCues: speechTimelineCues,
+          totalDuration: totalNarration,
+          enabled: zoomEnabled,
+        })
+      : [];
+
     return {
-      version: 2,
+      version: (overlays?.length ? 3 : 2) as 2 | 3,
       variant: { index, label: labelParts.join(' · ') },
       output: { width: 1080, height: 1920, fps: 30, maxSecondsPerClip: MAX_SECONDS_PER_CLIP },
       editing: smart ? 'smart' : 'whole',
       ...(smart ? { targetSeconds } : {}),
       cuts,
+      ...(overlays?.length ? { overlays } : {}),
       transitionSeconds,
-      captions: hasCaptions ? { language: input.captions.language, style: preset.style, source, lines } : null,
+      stabilizeShaky: input.stabilizeShaky !== false,
+      matchColours: input.matchColours !== false,
+      ...(hook ? { hook } : {}),
+      ...(plannedZooms.length ? { zooms: plannedZooms } : {}),
+      captions: hasCaptions ? { language: input.captions.language, style: effectiveCaptionStyle, source, lines } : null,
       watermark: input.logoKey ? { logoKey: input.logoKey } : { text: facts.orgName },
       endCard: {
         template: preset.template,
@@ -240,12 +425,150 @@ export function buildVariants(input: LabInput, count: number): EditRecipe[] {
   });
 }
 
+/**
+ * Synchronous variant builder (backward compatible with all existing tests and callers).
+ */
+export function buildVariants(input: LabInput, optionsOrCount: VariantInput = 1): EditRecipe[] {
+  return assembleVariants(input, optionsOrCount);
+}
+
+/**
+ * Asynchronous variant builder that engages the AI Edit Director (Gemini).
+ * If AI proposal fails, times out, or produces invalid output, it automatically falls back
+ * to the Phase 2 deterministic B-roll planner.
+ */
+export async function buildVariantsWithDirector(
+  input: LabInput,
+  optionsOrCount: VariantInput = 1
+): Promise<EditRecipe[]> {
+  const count = typeof optionsOrCount === 'number' ? optionsOrCount : optionsOrCount.length;
+  const clips: LabClip[] = input.clips.map((c) => ({
+    ...c,
+    cues: input.captions.source === 'speech' ? cleanCues(c.cues) : [],
+  }));
+  const smart = input.editing === 'smart' && clips.some((c) => c.shots?.some((s) => s.keep));
+  const hasSpeechShots = clips.some((c) => c.shots?.some((s) => s.keep && s.hasSpeech));
+  const hasBrollShots = clips.some((c) => c.shots?.some((s) => s.keep && !s.hasSpeech && s.quality >= 3));
+  const useBrollOverlays = smart && hasSpeechShots && hasBrollShots;
+
+  if (!useBrollOverlays) {
+    return buildVariants(input, optionsOrCount);
+  }
+
+  const targetSeconds = Math.max(8, Math.min(90, input.targetSeconds || DEFAULT_TARGET_SECONDS));
+  const transitionSeconds = SHORT_CROSSFADE_SECONDS;
+
+  const cuts = extractSpeechBlocks(clips, targetSeconds).map((seg) => {
+    const clip = clips.find((c) => c.key === seg.key)!;
+    const endSec = seg.end ?? clip.durationSeconds ?? (seg.start + 10);
+    const cues = cuesForCut(clip.cues, seg.start, endSec, input.captions.keywords);
+    return {
+      key: seg.key,
+      ...(clip.filename ? { filename: clip.filename } : {}),
+      start: seg.start,
+      end: endSec,
+      label: seg.label,
+      ...(cues.length ? { cues } : {}),
+    };
+  });
+
+  const segmentDurations = cuts.map((c) => (c.end ?? 10) - c.start);
+  const speechTimelineCues = placeCuesOnTimeline(cuts, segmentDurations, transitionSeconds, input.captions.keywords);
+  const totalNarration = Math.max(1, segmentDurations.reduce((sum, d) => sum + d, 0) - transitionSeconds * (cuts.length - 1));
+
+  try {
+    const aiOverlays = await planSmartEditsWithDirector({
+      clips,
+      speechCues: speechTimelineCues,
+      totalNarrationDuration: totalNarration,
+      projectName: input.facts.projectName.trim(),
+      orgName: input.facts.orgName.trim(),
+      language: input.captions.language,
+      targetSeconds,
+    });
+    return assembleVariants(input, optionsOrCount, aiOverlays);
+  } catch (err) {
+    // If anything fails in AI plan, assembleVariants handles fallback to buildBrollPlan
+    return assembleVariants(input, optionsOrCount);
+  }
+}
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Sorts cues, drops empty ones and fixes bad or overlapping times */
-export function cleanCues(cues: CaptionCue[] | undefined, maxSeconds = Infinity): CaptionCue[] {
+/**
+ * Splits a cue into sequential word tokens with proportional time interpolation
+ * and keyword detection. Never splits inside Indic characters.
+ */
+export function splitCueIntoWords(cue: { start: number; end: number; text: string }, keywords?: string[]): CueWord[] {
+  const rawText = String(cue.text || '').trim();
+  if (!rawText) return [];
+  const tokens = rawText.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return [];
+
+  const kwList = (keywords || [])
+    .map((k) => k.trim().toLowerCase())
+    .filter(Boolean);
+
+  const checkIsKeyword = (token: string): boolean => {
+    const cleanWord = token.toLowerCase().replace(/^[^\p{L}\p{N}\p{M}]+|[^\p{L}\p{N}\p{M}]+$/gu, '');
+    if (!cleanWord) return false;
+    for (const kw of kwList) {
+      if (kw === cleanWord) return true;
+      const kwTokens = kw.split(/\s+/);
+      if (kwTokens.includes(cleanWord)) return true;
+    }
+    if (!kwList.length) {
+      if (/^(\d+\s*bhk|rera|\d+\s*cr|\d+\s*lakh|sqft|luxury|penthouse|villa)$/i.test(cleanWord)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const totalDuration = Math.max(0.1, cue.end - cue.start);
+  if (tokens.length === 1) {
+    return [
+      {
+        text: tokens[0],
+        start: round2(cue.start),
+        end: round2(cue.end),
+        isKeyword: checkIsKeyword(tokens[0]),
+      },
+    ];
+  }
+
+  const weights = tokens.map((t) => Math.max(1, t.length));
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+  const words: CueWord[] = [];
+  let currentStart = cue.start;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const isLast = i === tokens.length - 1;
+    const wordDuration = isLast ? cue.end - currentStart : (totalDuration * weights[i]) / totalWeight;
+    const wordEnd = isLast ? cue.end : currentStart + wordDuration;
+
+    words.push({
+      text: tokens[i],
+      start: round2(currentStart),
+      end: round2(wordEnd),
+      isKeyword: checkIsKeyword(tokens[i]),
+    });
+    currentStart = wordEnd;
+  }
+
+  return words;
+}
+
+/** Sorts cues, drops empty ones, fixes bad or overlapping times, and populates word timings */
+export function cleanCues(cues: CaptionCue[] | undefined, maxSeconds = Infinity, keywords?: string[]): CaptionCue[] {
   const sorted = (cues || [])
-    .map((c) => ({ start: Number(c.start), end: Number(c.end), text: String(c.text ?? '').trim() }))
+    .map((c) => ({
+      start: Number(c.start),
+      end: Number(c.end),
+      text: String(c.text ?? '').trim(),
+      words: Array.isArray(c.words) ? c.words : undefined,
+    }))
     .filter((c) => c.text && Number.isFinite(c.start) && Number.isFinite(c.end) && c.start >= 0 && c.start < maxSeconds)
     .sort((a, b) => a.start - b.start);
 
@@ -256,13 +579,21 @@ export function cleanCues(cues: CaptionCue[] | undefined, maxSeconds = Infinity)
     if (end - c.start < 0.6) end = c.start + 0.6; // keep every caption readable
     if (next && end > next.start - 0.05) end = next.start - 0.05; // never overlap the next caption
     end = Math.min(end, maxSeconds);
-    if (end > c.start) out.push({ start: round2(c.start), end: round2(end), text: c.text });
+    if (end > c.start) {
+      const cueObj: CaptionCue = {
+        start: round2(c.start),
+        end: round2(end),
+        text: c.text,
+      };
+      cueObj.words = splitCueIntoWords(cueObj, keywords);
+      out.push(cueObj);
+    }
   });
   return out;
 }
 
 /** Captions that are spoken inside [start, end] of a clip, re-timed from the start of the cut */
-export function cuesForCut(cues: CaptionCue[] | undefined, start: number, end: number): CaptionCue[] {
+export function cuesForCut(cues: CaptionCue[] | undefined, start: number, end: number, keywords?: string[]): CaptionCue[] {
   const out: CaptionCue[] = [];
   for (const cue of cues || []) {
     const overlap = Math.min(cue.end, end) - Math.max(cue.start, start);
@@ -274,7 +605,7 @@ export function cuesForCut(cues: CaptionCue[] | undefined, start: number, end: n
       text: cue.text,
     });
   }
-  return cleanCues(out, end - start);
+  return cleanCues(out, end - start, keywords);
 }
 
 /**
@@ -284,16 +615,35 @@ export function cuesForCut(cues: CaptionCue[] | undefined, start: number, end: n
 export function placeCuesOnTimeline(
   cuts: Array<{ cues?: CaptionCue[] }>,
   segmentDurations: number[],
-  crossfadeSeconds: number
+  crossfadeSeconds: number,
+  keywords?: string[]
 ): CaptionCue[] {
   const all: CaptionCue[] = [];
   let offset = 0;
   cuts.forEach((cut, i) => {
     const duration = segmentDurations[i] ?? 0;
-    for (const cue of cleanCues(cut.cues, duration)) {
-      all.push({ start: offset + cue.start, end: offset + cue.end, text: cue.text });
+    for (const cue of cleanCues(cut.cues, duration, keywords)) {
+      const shiftedStart = round2(offset + cue.start);
+      const shiftedEnd = round2(offset + cue.end);
+      const shiftedWords = (cue.words || []).map((w) => ({
+        text: w.text,
+        start: round2(offset + w.start),
+        end: round2(offset + w.end),
+        isKeyword: w.isKeyword,
+      }));
+      all.push({
+        start: shiftedStart,
+        end: shiftedEnd,
+        text: cue.text,
+        words: shiftedWords.length ? shiftedWords : splitCueIntoWords({ start: shiftedStart, end: shiftedEnd, text: cue.text }, keywords),
+      });
     }
-    offset += duration - crossfadeSeconds;
+    const isSameClip =
+      cuts.length > i + 1 &&
+      Boolean((cuts[i] as any).key) &&
+      (cuts[i] as any).key === (cuts[i + 1] as any).key;
+    const trans = isSameClip ? SAME_CLIP_TRANSITION_SECONDS : crossfadeSeconds;
+    offset += duration - trans;
   });
-  return cleanCues(all);
+  return all;
 }

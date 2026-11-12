@@ -27,6 +27,9 @@ export interface IAiStudioImage {
   generationJobId?: string;
   provider?: string;
   savedToMediaId?: string;
+  generationMode?: 'AI_IMAGE' | 'ENHANCED_CROPS';
+  imageLabel?: string;
+  isIllustrative?: boolean;
 }
 
 export type ReelVariationStyle = 'CINEMATIC_SHOWCASE' | 'LUXURY_PRESENTATION' | 'MODERN_PROMO_AD';
@@ -87,6 +90,7 @@ export interface IAiStudioBatch extends Document {
   reels: IAiStudioReel[];
   sourceMediaAssetIds: Types.ObjectId[];
   errorMessage?: string;
+  generationMode?: 'AI_IMAGE' | 'ENHANCED_CROPS';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -123,6 +127,9 @@ const aiStudioImageSchema = new Schema<IAiStudioImage>(
     generationJobId: { type: String },
     provider: { type: String, default: 'realcrm-ai-engine' },
     savedToMediaId: { type: String },
+    generationMode: { type: String, enum: ['AI_IMAGE', 'ENHANCED_CROPS'], default: 'AI_IMAGE' },
+    imageLabel: { type: String },
+    isIllustrative: { type: Boolean, default: true },
   },
   { _id: false }
 );
@@ -228,6 +235,7 @@ const aiStudioBatchSchema = new Schema<IAiStudioBatch>(
       },
     ],
     errorMessage: { type: String },
+    generationMode: { type: String, enum: ['AI_IMAGE', 'ENHANCED_CROPS'], default: 'AI_IMAGE' },
   },
   {
     timestamps: true,

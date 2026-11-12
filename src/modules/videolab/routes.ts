@@ -11,6 +11,9 @@ import { videoLabService } from './service.js';
 import { MAX_VARIANTS, SHOT_CATEGORIES } from './recipe.js';
 import { analyzeClip } from './analyze.js';
 import { transcribeClip } from './transcribe.js';
+import { getTodayGeminiUsage } from './cacheModel.js';
+import { searchShots, getContentMemoryStats } from './memorySearch.js';
+import { analyzePhotos } from './photoAnalysis.js';
 import { LAB_ASSET_KEY } from './service.js';
 
 /**
@@ -125,7 +128,22 @@ const createRendersSchema = z.object({
   }),
   editing: z.enum(['smart', 'whole']).default('whole'),
   targetSeconds: z.number().int().min(8).max(90).optional(),
-  variants: z.number().int().min(1).max(MAX_VARIANTS).default(1),
+  creatorStyle: z
+    .object({
+      hookText: z.boolean().default(true),
+      punchInZoom: z.boolean().default(true),
+    })
+    .optional(),
+  stabilizeShaky: z.boolean().default(true).optional(),
+  matchColours: z.boolean().default(true).optional(),
+  variants: z
+    .union([
+      z.number().int().min(1).max(MAX_VARIANTS),
+      z.array(z.object({
+        captionStyle: z.enum(['POP', 'KARAOKE', 'SLIDE', 'MINIMAL', 'BOXED', 'OUTLINE']).optional(),
+      })).min(1).max(MAX_VARIANTS),
+    ])
+    .default(1),
 });
 
 router.post(
@@ -133,26 +151,67 @@ router.post(
   handleUpload,
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.file) throw AppError.badRequest('No file uploaded (field name must be "file")');
-    const asset = await videoLabService.uploadAsset(req.file);
+    const folder = req.query.folder === 'library' || (req.body && req.body.folder === 'library') ? 'library' : 'assets';
+    const asset = await videoLabService.uploadAsset(req.file, folder);
     sendSuccess(res, asset, 201);
   })
 );
 
-const transcribeSchema = z.object({ clipKey: assetKey, language });
-const analyzeSchema = z.object({ clipKey: assetKey });
+const analyzePhotosSchema = z.object({
+  photos: z
+    .array(
+      z.object({
+        key: assetKey,
+        filename: z.string().max(200).optional(),
+        isIllustrative: z.boolean().optional(),
+        consentOk: z.boolean().optional(),
+      })
+    )
+    .min(1)
+    .max(20),
+  force: z.boolean().optional(),
+  organizationId: z.string().optional(),
+  projectId: z.string().optional(),
+});
+
+router.post(
+  '/library/analyze-photos',
+  validate({ body: analyzePhotosSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { photos, force, organizationId, projectId } = req.body as z.infer<typeof analyzePhotosSchema>;
+    for (const p of photos) {
+      if (!LAB_ASSET_KEY.test(p.key) || !/\.(png|jpg|jpeg|webp)$/i.test(p.key)) {
+        throw AppError.badRequest(`Not a valid Video Lab photo: ${p.key}`);
+      }
+    }
+    const results = await analyzePhotos(photos, { force, organizationId, projectId });
+    sendSuccess(res, results);
+  })
+);
+
+const transcribeSchema = z.object({ clipKey: assetKey, language, force: z.boolean().optional() });
+const analyzeSchema = z.object({ clipKey: assetKey, force: z.boolean().optional() });
 
 const requireLabClip = (clipKey: string) => {
   if (!LAB_ASSET_KEY.test(clipKey) || !/\.(mp4|mov|webm)$/.test(clipKey)) throw AppError.badRequest('Not a Video Lab clip');
 };
+
+/** Returns today's Gemini request count and configured daily limit. */
+router.get(
+  '/usage',
+  asyncHandler(async (_req: Request, res: Response) => {
+    sendSuccess(res, await getTodayGeminiUsage());
+  })
+);
 
 /** Watches one uploaded clip: shots, what they show, quality, where to cut (ffmpeg + Gemini). */
 router.post(
   '/analyze',
   validate({ body: analyzeSchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const { clipKey } = req.body as z.infer<typeof analyzeSchema>;
+    const { clipKey, force } = req.body as z.infer<typeof analyzeSchema>;
     requireLabClip(clipKey);
-    sendSuccess(res, await analyzeClip(clipKey));
+    sendSuccess(res, await analyzeClip(clipKey, force));
   })
 );
 
@@ -161,9 +220,9 @@ router.post(
   '/transcribe',
   validate({ body: transcribeSchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const { clipKey, language } = req.body as z.infer<typeof transcribeSchema>;
+    const { clipKey, language, force } = req.body as z.infer<typeof transcribeSchema>;
     requireLabClip(clipKey);
-    sendSuccess(res, await transcribeClip(clipKey, language));
+    sendSuccess(res, await transcribeClip(clipKey, language, force));
   })
 );
 
@@ -188,6 +247,46 @@ router.get(
   '/renders/:id',
   asyncHandler(async (req: Request, res: Response) => {
     sendSuccess(res, await videoLabService.getRender(req.params.id));
+  })
+);
+
+/** Content Memory: search saved shots across past clips and reels */
+router.get(
+  '/memory/shots',
+  asyncHandler(async (req: Request, res: Response) => {
+    const room = typeof req.query.room === 'string' && req.query.room.trim() ? req.query.room.trim() : undefined;
+    const q = typeof req.query.q === 'string' && req.query.q.trim() ? req.query.q.trim() : undefined;
+    const excludeRecentDays = req.query.excludeRecentDays ? Number(req.query.excludeRecentDays) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 10;
+    const organizationId =
+      typeof req.query.organizationId === 'string' && req.query.organizationId.trim()
+        ? req.query.organizationId.trim()
+        : undefined;
+    const projectId =
+      typeof req.query.projectId === 'string' && req.query.projectId.trim() ? req.query.projectId.trim() : undefined;
+
+    const shots = await searchShots({
+      room,
+      q,
+      excludeRecentDays,
+      limit,
+      organizationId,
+      projectId,
+    });
+    sendSuccess(res, shots);
+  })
+);
+
+/** Content Memory: get statistics of saved items and shots */
+router.get(
+  '/memory/stats',
+  asyncHandler(async (req: Request, res: Response) => {
+    const organizationId =
+      typeof req.query.organizationId === 'string' && req.query.organizationId.trim()
+        ? req.query.organizationId.trim()
+        : undefined;
+    const stats = await getContentMemoryStats({ organizationId });
+    sendSuccess(res, stats);
   })
 );
 

@@ -8,15 +8,18 @@ import { AppError } from '../../utils/AppError.js';
 import { env } from '../../config/env.js';
 import { CaptionCue, CaptionLanguage, cleanCues } from './recipe.js';
 import { MAX_ANALYZE_SECONDS } from './analyze.js';
+import { getCachedAnalysis, setCachedAnalysis } from './cacheModel.js';
 
 export interface ClipTranscript {
   clipKey: string;
   language: CaptionLanguage;
   hasSpeech: boolean;
   spokenLanguage?: string;
+  keywords?: string[];
   cues: CaptionCue[];
   model: string;
   ms: number;
+  fromCache?: boolean;
 }
 
 /** How the captions must be written for each caption language */
@@ -35,7 +38,21 @@ const MAX_SECONDS = MAX_ANALYZE_SECONDS;
  * Listens to the speech in a Lab clip and returns short timed captions (via Gemini audio understanding).
  * Never invents text: no speech → hasSpeech false and no cues.
  */
-export async function transcribeClip(clipKey: string, language: CaptionLanguage): Promise<ClipTranscript> {
+export async function transcribeClip(
+  clipKey: string,
+  language: CaptionLanguage,
+  force = false
+): Promise<ClipTranscript> {
+  if (!force) {
+    const cached = await getCachedAnalysis<ClipTranscript>('TRANSCRIBE', clipKey, language);
+    if (cached) {
+      return {
+        ...cached,
+        fromCache: true,
+      };
+    }
+  }
+
   const started = Date.now();
   const clipPath = await defaultStorage.ensureLocal(clipKey);
   const probe = await probeMedia(clipPath);
@@ -73,28 +90,39 @@ Rules:
 - Split into short captions of at most 6 words each, at natural pauses. Caption the whole audio, start to end.
 - "start" and "end" are seconds from the start of the audio (0.1s precision) and must match when those words are spoken. All times must be between 0 and ${seconds.toFixed(1)}.
 - Ignore music, background noise and non-speech sounds.
-- If there is no clear speech, return "hasSpeech": false and an empty "segments" list.
+- If there is no clear speech, return "hasSpeech": false, an empty "keywords" list and an empty "segments" list.
+- Also extract 1 to 5 prominent real-estate keywords actually spoken in the audio (such as specific BHK sizes, room names, prices, locations, RERA, or key amenities like "balcony view", "ready to move", "clubhouse"). Return them in "keywords". If none, return an empty list [].
 
 Return only JSON in this exact shape:
-{"hasSpeech": true, "spokenLanguage": "Hindi", "segments": [{"start": 0.0, "end": 1.8, "text": "..."}]}`;
+{"hasSpeech": true, "spokenLanguage": "Hindi", "keywords": ["3 BHK", "Mohali"], "segments": [{"start": 0.0, "end": 1.8, "text": "..."}]}`;
 
   const result = await getAIProvider().generateJson<{
     hasSpeech?: boolean;
     spokenLanguage?: string;
+    keywords?: string[];
     segments?: Array<{ start: number; end: number; text: string }>;
   }>(prompt, {
     images: [{ data: audio, mimeType: 'audio/mp3' }],
     feature: 'Captions from speech',
   });
 
-  const cues = cleanCues(Array.isArray(result?.segments) ? result.segments : [], seconds);
-  return {
+  const rawKeywords = Array.isArray(result?.keywords) ? result.keywords.map((k) => String(k).trim()).filter(Boolean) : [];
+  const cues = cleanCues(Array.isArray(result?.segments) ? result.segments : [], seconds, rawKeywords);
+  const transcript: ClipTranscript = {
     clipKey,
     language,
     hasSpeech: Boolean(result?.hasSpeech) && cues.length > 0,
     ...(result?.spokenLanguage ? { spokenLanguage: String(result.spokenLanguage) } : {}),
+    ...(rawKeywords.length > 0 ? { keywords: rawKeywords } : {}),
     cues,
     model: env.GEMINI_TEXT_MODEL,
     ms: Date.now() - started,
+    fromCache: false,
   };
+
+  if (transcript.hasSpeech || (result && result.hasSpeech === false)) {
+    await setCachedAnalysis('TRANSCRIBE', clipKey, language, transcript);
+  }
+
+  return transcript;
 }

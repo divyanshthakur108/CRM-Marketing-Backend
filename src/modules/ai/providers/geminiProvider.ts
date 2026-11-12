@@ -16,6 +16,7 @@ import { env, maskSecret } from '../../../config/env.js';
 import { logger } from '../../../config/logger.js';
 import { defaultStorage } from '../../../storage/localStorage.adapter.js';
 import { AppError } from '../../../utils/AppError.js';
+import { recordGeminiUsage } from '../../videolab/cacheModel.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -59,6 +60,7 @@ export class GeminiAIProvider implements IAIProvider {
     parts.push({ text: prompt });
 
     try {
+      await recordGeminiUsage(env.GEMINI_TEXT_MODEL).catch(() => undefined);
       const ai = this.getClient();
       const response = await this.retryWithBackoff(() =>
         ai.models.generateContent({
@@ -164,6 +166,7 @@ Output strict JSON with keys:
 "hashtags": ["array", "of", "6", "tags"]`;
 
     try {
+      await recordGeminiUsage(env.GEMINI_TEXT_MODEL).catch(() => undefined);
       const ai = this.getClient();
       const response = await this.retryWithBackoff(() =>
         ai.models.generateContent({
@@ -207,6 +210,7 @@ Output strict JSON with keys:
     }
 
     try {
+      await recordGeminiUsage(env.GEMINI_IMAGE_MODEL).catch(() => undefined);
       if (imageBuffer) {
         // Image edit / background enhancement mode
         const prompt = options.prompt ||
@@ -338,6 +342,7 @@ Output strict JSON with keys:
     const ai = this.getClient();
 
     try {
+      await recordGeminiUsage(env.GEMINI_VIDEO_MODEL).catch(() => undefined);
       // 1. Submit asynchronous video generation request
       logger.info({ model: env.GEMINI_VIDEO_MODEL }, 'Submitting Veo video generation job');
 
@@ -513,25 +518,37 @@ Output strict JSON with keys:
   }
 
   /**
-   * Retries operation with exponential backoff on HTTP 429 rate limits
+   * Retries operation with exponential backoff on HTTP 429 rate limits or 503 busy/overloaded
    */
-  private async retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-    let delay = 1000;
+  private async retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 4): Promise<T> {
+    let delay = 2000;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await fn();
       } catch (err: any) {
         const errMsg = this.sanitizeError(err);
+        const lowerErr = errMsg.toLowerCase();
+
+        // Hard quota / billing limits (e.g. limit: 0, per day exceeded, or billing required) must NOT be retried
+        const isHardQuota =
+          (errMsg.includes('429') || lowerErr.includes('quota') || lowerErr.includes('resource_exhausted')) &&
+          (/per day|perday|per_day|limit:\s*0/i.test(errMsg) || lowerErr.includes('billing'));
+
+        if (isHardQuota) {
+          logger.warn({ errMsg }, 'Gemini hard quota / billing limit reached. Failing immediately without retry.');
+          throw err;
+        }
+
         const isRateLimit =
           errMsg.includes('429') ||
-          errMsg.toLowerCase().includes('quota') ||
-          errMsg.toLowerCase().includes('rate limit');
+          lowerErr.includes('quota') ||
+          lowerErr.includes('rate limit');
         // Gemini is temporarily overloaded ("high demand", 503 UNAVAILABLE)
         const isBusy = /"code":\s*503|UNAVAILABLE|overloaded|high demand/i.test(errMsg);
 
         if ((isRateLimit || isBusy) && attempt < maxRetries) {
           logger.warn(
-            { attempt, delay, reason: isBusy ? 'busy' : 'rate-limit' },
+            { attempt, delay, reason: isBusy ? 'busy' : 'rate-limit', error: errMsg },
             'Gemini API busy or rate limited. Backing off before retry...'
           );
           await new Promise((r) => setTimeout(r, delay));
@@ -539,6 +556,7 @@ Output strict JSON with keys:
           continue;
         }
 
+        logger.error({ attempt, reason: isBusy ? 'busy' : 'error', error: errMsg }, 'Gemini API call failed permanently');
         // If safety filter or other error, do not retry
         throw err;
       }

@@ -4,8 +4,10 @@ import path from 'path';
 import sharp from 'sharp';
 import { Types } from 'mongoose';
 import { VideoLabRender, IVideoLabRender } from './model.js';
-import { buildVariants, LabInput } from './recipe.js';
+import { buildVariants, buildVariantsWithDirector, LabInput, VariantInput } from './recipe.js';
 import { renderRecipeWithFfmpeg } from './ffmpegRenderer.js';
+import { runQualityCheck } from './qualityCheck.js';
+import { recordRenderContentMemory } from './memoryModel.js';
 import { defaultStorage } from '../../storage/localStorage.adapter.js';
 import { validateFileSignature } from '../../utils/fileSignature.js';
 import { probeMedia } from '../../utils/ffmpeg.js';
@@ -27,7 +29,7 @@ export interface LabAsset {
 }
 
 /** Only files uploaded through the Lab can be used as Lab inputs */
-export const LAB_ASSET_KEY = /^video-lab\/assets\/[a-f0-9-]{36}\.(mp4|mov|webm|png|jpg|jpeg|webp|mp3|m4a|wav|aac)$/;
+export const LAB_ASSET_KEY = /^video-lab\/(assets|library)\/[a-f0-9-]{36}\.(mp4|mov|webm|png|jpg|jpeg|webp|mp3|m4a|wav|aac)$/;
 
 const AUDIO_EXT: Record<string, string> = {
   'audio/mpeg': 'mp3',
@@ -58,7 +60,7 @@ function detectAudio(buffer: Buffer, mime: string): string | null {
 let renderChain: Promise<void> = Promise.resolve();
 
 export class VideoLabService {
-  public async uploadAsset(file: Express.Multer.File): Promise<LabAsset> {
+  public async uploadAsset(file: Express.Multer.File, folder: 'assets' | 'library' = 'assets'): Promise<LabAsset> {
     const mime = file.mimetype.toLowerCase();
     let kind: LabAssetKind;
     let ext: string;
@@ -78,12 +80,13 @@ export class VideoLabService {
       if (ext === 'jpeg') ext = 'jpg';
     }
 
-    const key = `video-lab/assets/${crypto.randomUUID()}.${ext}`;
+    const targetFolder = folder === 'library' ? 'library' : 'assets';
+    const key = `video-lab/${targetFolder}/${crypto.randomUUID()}.${ext}`;
     if (!LAB_ASSET_KEY.test(key)) throw AppError.badRequest(`Unsupported file extension: .${ext}`);
 
     const upload = await defaultStorage.upload(
       { buffer: file.buffer, filename: file.originalname, mimetype: file.mimetype },
-      'video-lab/assets',
+      `video-lab/${targetFolder}`,
       key
     );
 
@@ -108,13 +111,13 @@ export class VideoLabService {
     return asset;
   }
 
-  public async createRenders(input: LabInput, variants: number, adminUserId: string): Promise<IVideoLabRender[]> {
+  public async createRenders(input: LabInput, variants: VariantInput, adminUserId: string): Promise<IVideoLabRender[]> {
     const keys = [...input.clips.map((c) => c.key), input.logoKey, input.musicKey].filter(Boolean) as string[];
     for (const key of keys) {
       if (!LAB_ASSET_KEY.test(key)) throw AppError.badRequest(`Not a Video Lab file: ${key}`);
     }
 
-    const recipes = buildVariants(input, variants);
+    const recipes = await buildVariantsWithDirector(input, variants);
     if (recipes.some((r) => !r.cuts.length)) {
       throw AppError.badRequest('No usable shots: every shot is marked "cut". Keep at least one shot, or use whole clips.');
     }
@@ -181,9 +184,24 @@ export class VideoLabService {
         },
       });
 
+      const qcStarted = Date.now();
+      const qualityCheck = await runQualityCheck(outputPath, doc.recipe);
+      const qcStep = {
+        name: `Automated Quality Check: ${qualityCheck.passed ? 'PASSED' : 'NEEDS REVIEW'} (${qualityCheck.checks.map((c) => `${c.name}: ${c.status}`).join(', ')})`,
+        ms: Date.now() - qcStarted,
+      };
+      await VideoLabRender.updateOne({ _id: id }, { $push: { steps: qcStep } }).catch(() => undefined);
+
       const uploadStarted = Date.now();
       await defaultStorage.persist(outputKey);
       await defaultStorage.persist(posterKey);
+
+      recordRenderContentMemory({
+        renderId: id,
+        recipe: doc.recipe,
+        input: doc.input,
+        outputKey,
+      }).catch((err) => logger.warn({ err, renderId: id }, 'Content memory record render error'));
 
       await VideoLabRender.updateOne(
         { _id: id },
@@ -194,6 +212,7 @@ export class VideoLabService {
             outputUrl: defaultStorage.getUrl(outputKey),
             posterUrl: defaultStorage.getUrl(posterKey),
             durationSeconds: Math.round(result.durationSeconds * 10) / 10,
+            qualityCheck,
             renderMs: Date.now() - started,
             finishedAt: new Date(),
           },

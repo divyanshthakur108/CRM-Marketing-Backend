@@ -94,8 +94,8 @@ export async function processNextJob(queueName: string = 'media-rendering'): Pro
       return completed || job;
     } else if (job.jobType === 'GENERATE_STUDIO_BATCH') {
       const { aiStudioService } = await import('./modules/ai/aiStudioService.js');
-      const { batchId, organizationId, projectId, targetCount, stylePreset } = job.payload as any;
-      await aiStudioService.processStudioBatchJob(batchId, organizationId, projectId, { targetCount, stylePreset });
+      const { batchId, organizationId, projectId, targetCount, stylePreset, mode } = job.payload as any;
+      await aiStudioService.processStudioBatchJob(batchId, organizationId, projectId, { targetCount, stylePreset, mode });
       const completed = await jobQueue.completeJob(job._id, { batchId, completedAt: new Date() });
       logger.info({ jobId: job._id, batchId }, 'Worker completed studio batch generation job');
       return completed || job;

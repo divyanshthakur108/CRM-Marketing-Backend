@@ -641,25 +641,28 @@ export class AiController {
     if (!organizationId) throw AppError.unauthorized('Organization required');
 
     const { projectId } = req.params;
-    const { targetCount = 15, stylePreset = 'HERITAGE_LUXURY', isAsync = true } = req.body || {};
+    const { targetCount = 15, stylePreset = 'HERITAGE_LUXURY', isAsync = true, mode = 'AI_IMAGE' } = req.body || {};
+    const generationMode = mode === 'ENHANCED_CROPS' ? 'ENHANCED_CROPS' : 'AI_IMAGE';
 
     if (isAsync) {
       const batch = await aiStudioService.queueBatchGeneration(organizationId, projectId, {
         targetCount: Number(targetCount),
         stylePreset,
+        mode: generationMode,
       });
 
       sendSuccess(res, batch, 202, {
-        message: `AI Image Generation job enqueued (v${batch.version}). Processing in background.`,
+        message: `${generationMode === 'ENHANCED_CROPS' ? 'Enhanced Crops' : 'AI Image Generation'} job enqueued (v${batch.version}). Processing in background.`,
       });
     } else {
       const batch = await aiStudioService.generateBatchImages(organizationId, projectId, {
         targetCount: Number(targetCount),
         stylePreset,
+        mode: generationMode,
       });
 
       sendSuccess(res, batch, 201, {
-        message: `Generated ${batch.images.length}-Shot AI Marketing Image Suite (v${batch.version})`,
+        message: `Generated ${batch.images.length}-Shot ${generationMode === 'ENHANCED_CROPS' ? 'Enhanced Photo' : 'AI Marketing Image'} Suite (v${batch.version})`,
       });
     }
   };
