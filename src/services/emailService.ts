@@ -9,6 +9,16 @@ export interface SendInviteEmailParams {
   inviteLink: string;
 }
 
+export interface DemoNotificationData {
+  requestId: string;
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+  teamSize: string;
+  createdAt: Date | string;
+}
+
 class EmailService {
   private transporter: Transporter | null = null;
 
@@ -185,6 +195,439 @@ class EmailService {
           'SMTP not configured in production. Invitation email could not be dispatched.'
         );
       }
+    }
+  }
+
+  /**
+   * Dispatches an alert to the internal sales/growth team about a new VIP Demo Request.
+   */
+  public async sendDemoBookingNotification(data: DemoNotificationData): Promise<boolean> {
+    const recipient = env.DEMO_NOTIFICATION_EMAIL || env.ADMIN_EMAIL;
+    const subject = `New VIP Demo Booking – RealCRM`;
+    const formattedDate = new Date(data.createdAt).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    const cleanPhone = data.phone.replace(/[^0-9]/g, '');
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>New VIP Demo Booking – RealCRM</title>
+      </head>
+      <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; width: 100%; padding: 40px 15px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 580px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);">
+                
+                <!-- Header with Logo and VIP Badge -->
+                <tr>
+                  <td style="padding: 24px 32px; border-bottom: 1px solid #f1f5f9;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td align="left" style="vertical-align: middle;">
+                          <table role="presentation" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td style="width: 32px; height: 32px; background-color: #0a0a0a; border-radius: 8px; text-align: center; vertical-align: middle; color: #ffffff; font-weight: 800; font-size: 14px; letter-spacing: 0.5px;">
+                                RC
+                              </td>
+                              <td style="padding-left: 10px; font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; vertical-align: middle;">
+                                RealCRM
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                        <td align="right" style="vertical-align: middle;">
+                          <span style="display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a; text-transform: uppercase; letter-spacing: 0.5px;">
+                            VIP Demo Lead
+                          </span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- Content Body -->
+                <tr>
+                  <td style="padding: 32px;">
+                    <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; line-height: 1.3;">
+                      New Demo Request
+                    </h1>
+                    <p style="margin: 0 0 24px 0; font-size: 14px; color: #64748b; line-height: 1.5;">
+                      A new high-intent property professional has submitted a VIP Demo booking request.
+                    </p>
+
+                    <!-- Details Card -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-bottom: 24px;">
+                      <tr>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500; width: 38%;">
+                          Full Name
+                        </td>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #0f172a; font-size: 14px; font-weight: 700;">
+                          ${data.name}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Work Email
+                        </td>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; font-size: 14px;">
+                          <a href="mailto:${data.email}" style="color: #2563eb; font-weight: 600; text-decoration: none;">
+                            ${data.email}
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Phone (WhatsApp)
+                        </td>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; font-size: 14px;">
+                          <a href="tel:${data.phone}" style="color: #0f172a; font-weight: 600; text-decoration: none;">
+                            ${data.phone}
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Company / Brokerage
+                        </td>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #0f172a; font-size: 14px; font-weight: 600;">
+                          ${data.company}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Broker Team Size
+                        </td>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #334155; font-size: 14px; font-weight: 500;">
+                          ${data.teamSize}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Request ID
+                        </td>
+                        <td style="padding: 12px 18px; border-bottom: 1px solid #f1f5f9; font-size: 12px;">
+                          <span style="font-family: ui-monospace, Menlo, Monaco, Consolas, monospace; background-color: #e2e8f0; padding: 2px 6px; border-radius: 4px; color: #334155;">
+                            ${data.requestId}
+                          </span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 18px; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Submission Time
+                        </td>
+                        <td style="padding: 12px 18px; color: #475569; font-size: 13px;">
+                          ${formattedDate}
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Action Buttons -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding-right: 8px;" width="50%">
+                          <a href="https://wa.me/${cleanPhone}" style="display: block; text-align: center; background-color: #16a34a; color: #ffffff; font-weight: 600; font-size: 14px; text-decoration: none; padding: 12px 20px; border-radius: 8px;">
+                            Chat on WhatsApp
+                          </a>
+                        </td>
+                        <td style="padding-left: 8px;" width="50%">
+                          <a href="mailto:${data.email}?subject=Your%20RealCRM%20VIP%20Tour%20Scheduling" style="display: block; text-align: center; background-color: #0f172a; color: #ffffff; font-weight: 600; font-size: 14px; text-decoration: none; padding: 12px 20px; border-radius: 8px;">
+                            Reply via Email
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- Footer -->
+                <tr>
+                  <td style="padding: 20px 32px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center;">
+                    <p style="margin: 0 0 4px 0; font-size: 12px; color: #64748b;">
+                      Automated VIP Booking Alert &bull; RealCRM Inbound Notification Engine
+                    </p>
+                    <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                      &copy; ${new Date().getFullYear()} RealCRM Platform. All rights reserved.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const plainText = `
+New VIP Demo Booking – RealCRM
+
+Request ID: ${data.requestId}
+Full Name: ${data.name}
+Work Email: ${data.email}
+Phone (WhatsApp): ${data.phone}
+Company / Brokerage: ${data.company}
+Broker Team Size: ${data.teamSize}
+Submitted At: ${formattedDate}
+    `.trim();
+
+    if (this.transporter) {
+      try {
+        await this.transporter.sendMail({
+          from: env.SMTP_FROM,
+          to: recipient,
+          subject,
+          html,
+          text: plainText,
+        });
+        logger.info({ recipient, requestId: data.requestId }, 'Demo booking admin alert dispatched via SMTP');
+        return true;
+      } catch (err: unknown) {
+        logger.error({ err, recipient, requestId: data.requestId }, 'Failed to dispatch demo booking admin email via SMTP');
+        return false;
+      }
+    } else {
+      if (env.NODE_ENV !== 'production') {
+        console.log('\n========================================================================');
+        console.log('✉️  [NODEMAILER DEV DISPATCH: VIP DEMO NOTIFICATION]');
+        console.log(`   Recipient:    ${recipient}`);
+        console.log(`   Lead Name:    ${data.name} (${data.company})`);
+        console.log(`   Contact:      ${data.phone} / ${data.email}`);
+        console.log(`   Team Size:    ${data.teamSize}`);
+        console.log('========================================================================\n');
+      } else {
+        logger.warn(
+          { recipient, requestId: data.requestId },
+          'SMTP not configured in production. Demo notification email could not be dispatched.'
+        );
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Dispatches a customer confirmation email acknowledging their VIP Demo booking request.
+   */
+  public async sendDemoConfirmationToVisitor(data: DemoNotificationData): Promise<boolean> {
+    const subject = `Your RealCRM VIP Demo Request Has Been Received`;
+    const formattedDate = new Date(data.createdAt).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Your RealCRM VIP Demo Request Has Been Received</title>
+      </head>
+      <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; width: 100%; padding: 40px 15px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 580px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);">
+                
+                <!-- Header with Logo and Status Badge -->
+                <tr>
+                  <td style="padding: 24px 32px; border-bottom: 1px solid #f1f5f9;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td align="left" style="vertical-align: middle;">
+                          <table role="presentation" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td style="width: 32px; height: 32px; background-color: #0a0a0a; border-radius: 8px; text-align: center; vertical-align: middle; color: #ffffff; font-weight: 800; font-size: 14px; letter-spacing: 0.5px;">
+                                RC
+                              </td>
+                              <td style="padding-left: 10px; font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; vertical-align: middle;">
+                                RealCRM
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                        <td align="right" style="vertical-align: middle;">
+                          <span style="display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; text-transform: uppercase; letter-spacing: 0.5px;">
+                            DEMO REQUEST CONFIRMED
+                          </span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- Content Body -->
+                <tr>
+                  <td style="padding: 32px;">
+                    <h1 style="margin: 0 0 12px 0; font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; line-height: 1.3;">
+                      Thank You for Choosing RealCRM!
+                    </h1>
+                    <p style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #1e293b;">
+                      Hi ${data.name},
+                    </p>
+                    <p style="margin: 0 0 24px 0; font-size: 14px; color: #475569; line-height: 1.6;">
+                      We have successfully received your VIP Demo request for <strong>${data.company}</strong>. Our real estate solutions consultant is preparing a personalized walkthrough of the AI Video Lab, automated WhatsApp marketing pipelines, and lead conversion workflows tailored to your team.
+                    </p>
+
+                    <!-- Booking Details Card -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-bottom: 24px;">
+                      <tr>
+                        <td colspan="2" style="padding: 14px 18px 8px 18px; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                          Booking Summary
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500; width: 38%;">
+                          Full Name
+                        </td>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #0f172a; font-size: 14px; font-weight: 700;">
+                          ${data.name}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Work Email
+                        </td>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #334155; font-size: 14px; font-weight: 500;">
+                          ${data.email}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Phone (WhatsApp)
+                        </td>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #0f172a; font-size: 14px; font-weight: 600;">
+                          ${data.phone}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Company / Brokerage
+                        </td>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #0f172a; font-size: 14px; font-weight: 600;">
+                          ${data.company}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Broker Team Size
+                        </td>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #334155; font-size: 14px; font-weight: 500;">
+                          ${data.teamSize}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Request ID
+                        </td>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; font-size: 12px;">
+                          <span style="font-family: ui-monospace, Menlo, Monaco, Consolas, monospace; background-color: #e2e8f0; padding: 2px 6px; border-radius: 4px; color: #334155;">
+                            ${data.requestId}
+                          </span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 13px; font-weight: 500;">
+                          Submission Date
+                        </td>
+                        <td style="padding: 10px 18px; border-top: 1px solid #f1f5f9; color: #475569; font-size: 13px;">
+                          ${formattedDate}
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- What's Next Callout -->
+                    <div style="background-color: #eff6ff; border-left: 3px solid #2563eb; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-bottom: 24px;">
+                      <div style="font-size: 13px; font-weight: 700; color: #1e40af; margin-bottom: 4px;">
+                        What Happens Next?
+                      </div>
+                      <p style="margin: 0; font-size: 13px; color: #2563eb; line-height: 1.5;">
+                        Our dedicated real estate specialist will reach out to coordinate a convenient time for your interactive walkthrough. You will see firsthand how property developers and brokerages use RealCRM to capture, engage, and close transactions faster.
+                      </p>
+                    </div>
+
+                    <p style="margin: 0 0 4px 0; font-size: 14px; color: #475569;">
+                      Warm regards,
+                    </p>
+                    <p style="margin: 0; font-size: 14px; font-weight: 700; color: #0f172a;">
+                      The RealCRM Team
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- Footer -->
+                <tr>
+                  <td style="padding: 24px 32px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center;">
+                    <p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b; font-weight: 500;">
+                      RealCRM &mdash; The AI Operating System for Modern Real Estate Teams
+                    </p>
+                    <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                      &copy; ${new Date().getFullYear()} RealCRM Platform. All rights reserved.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const plainText = `
+Hello ${data.name},
+
+Thank you for choosing RealCRM!
+
+We have received your VIP Demo request for ${data.company} (${data.teamSize}).
+
+Booking Summary:
+- Request ID: ${data.requestId}
+- Full Name: ${data.name}
+- Work Email: ${data.email}
+- Phone: ${data.phone}
+- Company: ${data.company}
+- Team Size: ${data.teamSize}
+- Submission Date: ${formattedDate}
+
+What Happens Next:
+Our team will reach out directly to coordinate a convenient time for your personalized product walkthrough.
+
+Warm regards,
+The RealCRM Team
+    `.trim();
+
+    if (this.transporter) {
+      try {
+        await this.transporter.sendMail({
+          from: env.SMTP_FROM,
+          to: data.email,
+          subject,
+          html,
+          text: plainText,
+        });
+        logger.info({ to: data.email, requestId: data.requestId }, 'Demo confirmation email sent to visitor');
+        return true;
+      } catch (err: unknown) {
+        logger.error({ err, to: data.email, requestId: data.requestId }, 'Failed to dispatch demo confirmation email to visitor');
+        return false;
+      }
+    } else {
+      if (env.NODE_ENV !== 'production') {
+        console.log('\n========================================================================');
+        console.log('✉️  [NODEMAILER DEV DISPATCH: VISITOR CONFIRMATION]');
+        console.log(`   Recipient:    ${data.email} (${data.name})`);
+        console.log(`   Subject:      ${subject}`);
+        console.log('========================================================================\n');
+      }
+      return false;
     }
   }
 }

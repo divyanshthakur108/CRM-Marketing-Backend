@@ -32,6 +32,7 @@ import adminRouter from './modules/admin/routes.js';
 import videoLabRouter from './modules/videolab/routes.js';
 import onboardingRouter from './modules/onboarding/routes.js';
 import notificationsRouter from './modules/notifications/routes.js';
+import { publicRouter } from './modules/public/routes.js';
 import path from 'path';
 import { defaultStorage } from './storage/localStorage.adapter.js';
 
@@ -129,6 +130,7 @@ export const createApp = (): Express => {
   app.use('/api/v1/admin/organizations', adminRouter);
   app.use('/api/v1/onboarding', onboardingRouter);
   app.use('/api/v1/notifications', notificationsRouter);
+  app.use('/api/v1/public', publicRouter);
   app.use('/api/v1/webhooks', webhooksRouter);
   app.use('/webhooks', webhooksRouter);
 
