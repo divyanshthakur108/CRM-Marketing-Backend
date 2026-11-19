@@ -13,10 +13,11 @@ import { logger } from '../config/logger.js';
  * based on ADMIN_EMAIL and ADMIN_PASSWORD in .env.
  */
 export async function seedAdmin(): Promise<void> {
-  const adminEmail = (env.ADMIN_EMAIL || 'admin@realcrm.in').toLowerCase().trim();
+  const adminEmails = [
+    (env.ADMIN_EMAIL || 'admin@realcrm.in').toLowerCase().trim(),
+    'divyanshthakur327@gmail.com',
+  ];
   const adminPassword = env.ADMIN_PASSWORD || 'AdminPassword123!';
-
-  logger.info({ adminEmail }, 'Seeding Platform Admin account...');
 
   if (mongoose.connection.readyState === 0) {
     await connectDB();
@@ -24,23 +25,26 @@ export async function seedAdmin(): Promise<void> {
 
   const passwordHash = await bcrypt.hash(adminPassword, 10);
 
-  const existingAdmin = await User.findOne({ email: adminEmail });
+  for (const adminEmail of adminEmails) {
+    logger.info({ adminEmail }, 'Seeding Platform Admin account...');
+    const existingAdmin = await User.findOne({ email: adminEmail });
 
-  if (existingAdmin) {
-    existingAdmin.passwordHash = passwordHash;
-    existingAdmin.isPlatformAdmin = true;
-    existingAdmin.status = 'active';
-    await existingAdmin.save();
-    logger.info({ adminEmail, id: existingAdmin._id }, 'Platform Admin updated successfully');
-  } else {
-    const newAdmin = await User.create({
-      email: adminEmail,
-      fullName: 'Platform Administrator',
-      passwordHash,
-      isPlatformAdmin: true,
-      status: 'active',
-    });
-    logger.info({ adminEmail, id: newAdmin._id }, 'Platform Admin created successfully');
+    if (existingAdmin) {
+      existingAdmin.passwordHash = passwordHash;
+      existingAdmin.isPlatformAdmin = true;
+      existingAdmin.status = 'active';
+      await existingAdmin.save();
+      logger.info({ adminEmail, id: existingAdmin._id }, 'Platform Admin updated successfully');
+    } else {
+      const newAdmin = await User.create({
+        email: adminEmail,
+        fullName: adminEmail.startsWith('admin') ? 'Platform Administrator' : 'Divyansh Thakur',
+        passwordHash,
+        isPlatformAdmin: true,
+        status: 'active',
+      });
+      logger.info({ adminEmail, id: newAdmin._id }, 'Platform Admin created successfully');
+    }
   }
 }
 

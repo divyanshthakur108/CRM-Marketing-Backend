@@ -5,6 +5,7 @@ import { env } from './config/env.js';
 import { initAllIndexes } from './models/initIndexes.js';
 import { rollingScheduler } from './scheduler/rollingScheduler.js';
 import { startWorkerLoop, stopWorker } from './worker.js';
+import { seedAdmin } from './scripts/seedAdmin.js';
 import mongoose from 'mongoose';
 
 // Environment configurations loaded from .env
@@ -15,6 +16,11 @@ async function bootstrap() {
 
   if (isConnected) {
     await initAllIndexes();
+    try {
+      await seedAdmin();
+    } catch (err: unknown) {
+      logger.error({ err }, 'Error auto-seeding admin accounts');
+    }
     if (env.NODE_ENV !== 'test') {
       rollingScheduler.startDailyScheduler();
       startWorkerLoop().catch((err) => logger.error({ err }, 'Worker loop error'));
@@ -29,8 +35,10 @@ async function bootstrap() {
       logger.info('MongoDB connection restored. Initializing database indexes...');
       try {
         await initAllIndexes();
+        await seedAdmin();
         if (env.NODE_ENV !== 'test') {
           rollingScheduler.startDailyScheduler();
+          startWorkerLoop().catch((err) => logger.error({ err }, 'Worker loop error'));
         }
       } catch (err: unknown) {
         logger.error({ err }, 'Error initializing indexes after connection restore');

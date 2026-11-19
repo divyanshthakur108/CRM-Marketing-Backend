@@ -81,7 +81,13 @@ export const errorHandler: ErrorRequestHandler = (
     code = 'INVALID_JSON';
     message = 'Malformed JSON in request payload';
   }
-  // 4. Unexpected / Unhandled Error
+  // 7. Mongoose Connection / Buffering Timeout
+  else if (err.name === 'MongooseError' && err.message.includes('buffering timed out')) {
+    statusCode = 503;
+    code = 'DATABASE_UNAVAILABLE';
+    message = 'Database connection is reconnecting or temporarily unavailable. Please try again in a few seconds.';
+  }
+  // 8. Unexpected / Unhandled Error
   else {
     logger.error(
       {

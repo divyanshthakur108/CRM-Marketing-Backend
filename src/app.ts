@@ -33,7 +33,9 @@ import videoLabRouter from './modules/videolab/routes.js';
 import onboardingRouter from './modules/onboarding/routes.js';
 import notificationsRouter from './modules/notifications/routes.js';
 import { publicRouter } from './modules/public/routes.js';
+import mockAiGenRouter from './modules/mockAiGen/routes.js';
 import path from 'path';
+import fs from 'fs';
 import { defaultStorage } from './storage/localStorage.adapter.js';
 
 export const createApp = (): Express => {
@@ -92,9 +94,31 @@ export const createApp = (): Express => {
 
   // 6. Static File Storage
   // Files saved by this machine are served from disk; anything else redirects to Cloudinary.
-  app.use('/storage', express.static(path.resolve(process.cwd(), 'storage')));
+  const storageDir = fs.existsSync(path.resolve(process.cwd(), 'storage'))
+    ? path.resolve(process.cwd(), 'storage')
+    : path.resolve(process.cwd(), 'CRM-Marketing-Backend', 'storage');
+
+  app.use('/storage', express.static(storageDir));
+
+  // Isolated Mock AI Gen Sandbox file route fallback (supports HTTP 206 Partial Content Range requests)
+  app.get('/storage/mock_ai_gen/*', (req, res) => {
+    const subPath = req.path.replace(/^\/storage\/mock_ai_gen\/?/, '');
+    const resolved = path.resolve(storageDir, 'mock_ai_gen', subPath);
+    if (!resolved.startsWith(path.resolve(storageDir, 'mock_ai_gen'))) {
+      return res.status(403).json({ success: false, message: 'Forbidden file access' });
+    }
+    if (!fs.existsSync(resolved)) {
+      return res.status(404).json({ success: false, message: 'File not found in sandbox' });
+    }
+    return res.sendFile(resolved);
+  });
+
   if (defaultStorage.isCloudinary) {
-    app.get('/storage/*', (req, res) => {
+    app.get('/storage/*', (req, res, next) => {
+      // Strictly serve local mock_ai_gen sandbox assets without Cloudinary redirection
+      if (req.path.includes('mock_ai_gen')) {
+        return next();
+      }
       const key = decodeURIComponent(req.path.replace(/^\/+/, ''));
       try {
         res.redirect(302, defaultStorage.getUrl(key));
@@ -130,6 +154,7 @@ export const createApp = (): Express => {
   app.use('/api/v1/admin/organizations', adminRouter);
   app.use('/api/v1/onboarding', onboardingRouter);
   app.use('/api/v1/notifications', notificationsRouter);
+  app.use('/api/v1/mock-ai-gen', mockAiGenRouter);
   app.use('/api/v1/public', publicRouter);
   app.use('/api/v1/webhooks', webhooksRouter);
   app.use('/webhooks', webhooksRouter);

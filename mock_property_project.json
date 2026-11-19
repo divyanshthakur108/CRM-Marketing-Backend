@@ -1,0 +1,738 @@
+{
+  "schemaVersion": "1.0.0",
+  "datasetType": "SYNTHETIC_DEMO_DO_NOT_PUBLISH",
+  "project": {
+    "id": "demo-flat-001",
+    "name": "Skyline Demo Residence",
+    "projectType": "residential_flat",
+    "description": "Entirely fictional test data for the mock generator. Verify every claim before substituting real property data.",
+    "address": {
+      "line1": "Example Residential Building",
+      "locality": "Demo Sector",
+      "city": "Sample City",
+      "state": "Example State",
+      "country": "India"
+    },
+    "floor": {
+      "unitFloor": 3,
+      "buildingFloors": 5,
+      "isTopFloor": false,
+      "liftAvailable": true
+    },
+    "configuration": {
+      "bhk": 3,
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "livingRooms": 1,
+      "diningAreas": 1,
+      "kitchens": 1,
+      "balconies": 1,
+      "rooftopAccess": "shared_common_area"
+    },
+    "area": {
+      "carpetSqFt": 1170,
+      "builtUpSqFt": 1450,
+      "balconySqFt": 78,
+      "measurementsAreVerified": false
+    },
+    "orientation": "East-facing (mock only)",
+    "ownership": "demo",
+    "furnishing": "semi-furnished (mock only)",
+    "commercialFacts": {
+      "priceInr": null,
+      "reraNumber": null,
+      "possessionDate": null,
+      "contactPhone": null,
+      "contactEmail": null,
+      "approvedClaims": []
+    },
+    "branding": {
+      "companyName": "Demo Realty Studio",
+      "logoAssetId": "brand_logo",
+      "brandColors": [
+        "#102238",
+        "#D0B17D",
+        "#F2EEE7"
+      ],
+      "fontPreferences": [
+        "DM Sans",
+        "Playfair Display"
+      ],
+      "cta": "Request property details"
+    }
+  },
+  "areas": [
+    {
+      "id": "living",
+      "name": "Living & Dining",
+      "category": "living_dining",
+      "approxSizeSqFt": 310,
+      "orientation": "East",
+      "visibleOrExpectedFeatures": [
+        "large window",
+        "dining niche",
+        "cove lighting"
+      ],
+      "assetIds": [
+        "living_wide",
+        "living_detail"
+      ],
+      "verified": false
+    },
+    {
+      "id": "master",
+      "name": "Master Bedroom",
+      "category": "bedroom",
+      "approxSizeSqFt": 205,
+      "orientation": "South",
+      "visibleOrExpectedFeatures": [
+        "attached bathroom",
+        "wardrobe niche",
+        "window"
+      ],
+      "assetIds": [
+        "master_wide"
+      ],
+      "verified": false
+    },
+    {
+      "id": "bed2",
+      "name": "Bedroom 2",
+      "category": "bedroom",
+      "approxSizeSqFt": 160,
+      "orientation": "West",
+      "visibleOrExpectedFeatures": [
+        "window and wardrobe provision"
+      ],
+      "assetIds": [
+        "bedroom2_wide"
+      ],
+      "verified": false
+    },
+    {
+      "id": "bed3",
+      "name": "Bedroom 3 / Study",
+      "category": "bedroom",
+      "approxSizeSqFt": 142,
+      "orientation": "North",
+      "visibleOrExpectedFeatures": [
+        "flexible study layout",
+        "daylight window"
+      ],
+      "assetIds": [
+        "bedroom3_wide"
+      ],
+      "verified": false
+    },
+    {
+      "id": "kitchen",
+      "name": "Kitchen",
+      "category": "kitchen",
+      "approxSizeSqFt": 118,
+      "orientation": "East",
+      "visibleOrExpectedFeatures": [
+        "L-shaped counter",
+        "sink",
+        "tiled backsplash",
+        "utility door"
+      ],
+      "assetIds": [
+        "kitchen_wide",
+        "kitchen_detail"
+      ],
+      "verified": false
+    },
+    {
+      "id": "bath_master",
+      "name": "Attached Bathroom",
+      "category": "bathroom",
+      "approxSizeSqFt": 62,
+      "orientation": "South",
+      "visibleOrExpectedFeatures": [
+        "shower area",
+        "wash basin",
+        "exhaust"
+      ],
+      "assetIds": [
+        "bathroom_master"
+      ],
+      "verified": false
+    },
+    {
+      "id": "bath_common",
+      "name": "Common Bathroom",
+      "category": "bathroom",
+      "approxSizeSqFt": 58,
+      "orientation": "North",
+      "visibleOrExpectedFeatures": [
+        "shower area",
+        "basin",
+        "ventilator"
+      ],
+      "assetIds": [
+        "bathroom_common"
+      ],
+      "verified": false
+    },
+    {
+      "id": "balcony",
+      "name": "Balcony",
+      "category": "balcony",
+      "approxSizeSqFt": 78,
+      "orientation": "East",
+      "visibleOrExpectedFeatures": [
+        "sliding door",
+        "railing",
+        "daylight"
+      ],
+      "assetIds": [
+        "balcony_view"
+      ],
+      "verified": false
+    },
+    {
+      "id": "entry",
+      "name": "Entry & Corridor",
+      "category": "entry",
+      "approxSizeSqFt": 92,
+      "orientation": "West",
+      "visibleOrExpectedFeatures": [
+        "entry door",
+        "passage"
+      ],
+      "assetIds": [
+        "entrance"
+      ],
+      "verified": false
+    },
+    {
+      "id": "terrace",
+      "name": "Shared Rooftop Terrace",
+      "category": "rooftop",
+      "approxSizeSqFt": 480,
+      "orientation": null,
+      "visibleOrExpectedFeatures": [
+        "open rooftop",
+        "railings; common area",
+        "not part of private flat"
+      ],
+      "assetIds": [
+        "rooftop"
+      ],
+      "verified": false
+    },
+    {
+      "id": "exterior",
+      "name": "Building Exterior",
+      "category": "exterior",
+      "approxSizeSqFt": null,
+      "orientation": null,
+      "visibleOrExpectedFeatures": [
+        "actual building elevation and entrance"
+      ],
+      "assetIds": [
+        "exterior"
+      ],
+      "verified": false
+    }
+  ],
+  "media": {
+    "logo": {
+      "id": "brand_logo",
+      "fileName": null,
+      "uploaded": false,
+      "approved": false
+    },
+    "assets": [
+      {
+        "id": "living_wide",
+        "label": "Living room wide shot",
+        "areaId": "living",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "living_detail",
+        "label": "Living area architectural detail",
+        "areaId": "living",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "master_wide",
+        "label": "Master bedroom wide shot",
+        "areaId": "master",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "bedroom2_wide",
+        "label": "Bedroom two",
+        "areaId": "bed2",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "bedroom3_wide",
+        "label": "Bedroom three / study",
+        "areaId": "bed3",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "kitchen_wide",
+        "label": "Kitchen wide shot",
+        "areaId": "kitchen",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "kitchen_detail",
+        "label": "Kitchen detail",
+        "areaId": "kitchen",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "bathroom_master",
+        "label": "Attached bathroom",
+        "areaId": "bath_master",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "bathroom_common",
+        "label": "Common bathroom",
+        "areaId": "bath_common",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "balcony_view",
+        "label": "Balcony view",
+        "areaId": "balcony",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "entrance",
+        "label": "Main entrance",
+        "areaId": "entry",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "rooftop",
+        "label": "Rooftop terrace",
+        "areaId": "terrace",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      },
+      {
+        "id": "exterior",
+        "label": "Building exterior",
+        "areaId": "exterior",
+        "assetType": "image",
+        "fileName": null,
+        "storageAssetId": null,
+        "uploaded": false,
+        "approved": false,
+        "classification": "ACTUAL",
+        "notes": "Upload an original photo of this exact area; do not use a screenshot or a branded card."
+      }
+    ],
+    "sourceVideos": [],
+    "requireManualRoomMapping": true,
+    "neverOverwriteOriginals": true
+  },
+  "generationSettings": {
+    "mode": "MOCK_PLAN_ONLY",
+    "sourceFidelity": "STRICT",
+    "requireActualUploadedMedia": true,
+    "allowRunwayGenerativeMotion": true,
+    "runwayVideoOnlyForSelectedShots": true,
+    "maxPaidRunwayClipTests": 2,
+    "neverAutoPublish": true,
+    "neverGenerateVoiceoverInPilot": true,
+    "finalReviewRequired": true,
+    "duplicateScenePolicy": "avoid",
+    "brandingInFinalComposer": true
+  },
+  "campaigns": [
+    {
+      "id": "fb-2026-12-04",
+      "campaignName": "Space & Flow",
+      "goal": "Introduce the flat, architecture and room flow",
+      "platform": "facebook",
+      "publishAtLocal": "2026-12-04T18:30:00+05:30",
+      "timezone": "Asia/Kolkata",
+      "status": "DRAFT_NOT_SCHEDULED",
+      "language": "Hinglish / English",
+      "designProfile": "LUXURY_EDITORIAL",
+      "visualDirection": "Warm neutral, elegant serif, slow atmospheric movement; start from exterior and spacious interior",
+      "durationSeconds": 25,
+      "output": {
+        "width": 1080,
+        "height": 1920,
+        "fps": 24,
+        "format": "mp4",
+        "aspectRatio": "9:16"
+      },
+      "caption": "A home with thoughtful space and everyday comfort. Ghar jahan moments bante hain. Explore the details.",
+      "music": {
+        "enabled": false,
+        "licensedTrackAssetId": null
+      },
+      "voiceover": {
+        "enabled": false
+      },
+      "scenes": [
+        {
+          "assetId": "exterior",
+          "seconds": 3,
+          "role": "hook",
+          "text": "A home that feels like you",
+          "language": "en",
+          "motion": "slow_push",
+          "runwayClip": false
+        },
+        {
+          "assetId": "living_wide",
+          "seconds": 5,
+          "role": "hero",
+          "text": "Space jo har din special banaye",
+          "language": "hinglish",
+          "motion": "gentle_dolly_in",
+          "runwayClip": true
+        },
+        {
+          "assetId": "kitchen_wide",
+          "seconds": 4,
+          "role": "feature",
+          "text": "Kitchen, thoughtfully planned",
+          "language": "en",
+          "motion": "lateral_drift",
+          "runwayClip": false
+        },
+        {
+          "assetId": "master_wide",
+          "seconds": 5,
+          "role": "lifestyle",
+          "text": "Your peaceful corner",
+          "language": "en",
+          "motion": "light_camera_glide",
+          "runwayClip": true
+        },
+        {
+          "assetId": "balcony_view",
+          "seconds": 4,
+          "role": "breathing_room",
+          "text": "Everyday moments, beautifully framed",
+          "language": "en",
+          "motion": "subtle_parallax",
+          "runwayClip": false
+        },
+        {
+          "assetId": "exterior",
+          "seconds": 4,
+          "role": "outro",
+          "text": "Explore the full project",
+          "language": "en",
+          "motion": "static_endcard",
+          "runwayClip": false
+        }
+      ],
+      "generationPolicy": {
+        "runwayProvider": "runway_dev",
+        "videoModelCandidate": "gen3a_turbo",
+        "runwayClipCount": 2,
+        "runwayClipDurationSeconds": 5,
+        "runwayRatioCandidate": "720:1280",
+        "useRealClientImagesAsReferences": true,
+        "allowFabricatedArchitecture": false,
+        "manualPaidCallApproval": true,
+        "finalComposer": "ffmpeg_or_existing_editor",
+        "qualityGate": "human_approval_required"
+      }
+    },
+    {
+      "id": "fb-2026-12-15",
+      "campaignName": "Details That Matter",
+      "goal": "Show functional details, flexible rooms and shared rooftop",
+      "platform": "facebook",
+      "publishAtLocal": "2026-12-15T18:30:00+05:30",
+      "timezone": "Asia/Kolkata",
+      "status": "DRAFT_NOT_SCHEDULED",
+      "language": "Hindi",
+      "designProfile": "MODERN_ARCHITECTURAL",
+      "visualDirection": "Contemporary Swiss typography, high-contrast clean graphics, quicker pacing; focus on useful details and rooftop",
+      "durationSeconds": 26,
+      "output": {
+        "width": 1080,
+        "height": 1920,
+        "fps": 24,
+        "format": "mp4",
+        "aspectRatio": "9:16"
+      },
+      "caption": "हर कोना एक नई कहानी। देखें इस घर की सोच-समझकर बनाई गई जगहें।",
+      "music": {
+        "enabled": false,
+        "licensedTrackAssetId": null
+      },
+      "voiceover": {
+        "enabled": false
+      },
+      "scenes": [
+        {
+          "assetId": "entrance",
+          "seconds": 3,
+          "role": "hook",
+          "text": "एक घर, कई खूबसूरत कहानियाँ",
+          "language": "hi",
+          "motion": "crisp_reveal",
+          "runwayClip": false
+        },
+        {
+          "assetId": "bedroom3_wide",
+          "seconds": 4,
+          "role": "flexibility",
+          "text": "हर कमरे में नई संभावनाएँ",
+          "language": "hi",
+          "motion": "smooth_push",
+          "runwayClip": true
+        },
+        {
+          "assetId": "bathroom_master",
+          "seconds": 3,
+          "role": "detail",
+          "text": "हर डिटेल में ध्यान",
+          "language": "hi",
+          "motion": "short_cut",
+          "runwayClip": false
+        },
+        {
+          "assetId": "living_detail",
+          "seconds": 4,
+          "role": "materials",
+          "text": "डिज़ाइन जो महसूस हो",
+          "language": "hi",
+          "motion": "detail_tracking",
+          "runwayClip": false
+        },
+        {
+          "assetId": "rooftop",
+          "seconds": 5,
+          "role": "amenity",
+          "text": "खुली छत, नए नज़ारे",
+          "language": "hi",
+          "motion": "gentle_camera_rise",
+          "runwayClip": true
+        },
+        {
+          "assetId": "kitchen_detail",
+          "seconds": 3,
+          "role": "feature",
+          "text": "सोची-समझी हर जगह",
+          "language": "hi",
+          "motion": "smooth_pan",
+          "runwayClip": false
+        },
+        {
+          "assetId": "exterior",
+          "seconds": 4,
+          "role": "outro",
+          "text": "पूरी जानकारी के लिए संपर्क करें",
+          "language": "hi",
+          "motion": "graphic_endcard",
+          "runwayClip": false
+        }
+      ],
+      "generationPolicy": {
+        "runwayProvider": "runway_dev",
+        "videoModelCandidate": "gen3a_turbo",
+        "runwayClipCount": 2,
+        "runwayClipDurationSeconds": 5,
+        "runwayRatioCandidate": "720:1280",
+        "useRealClientImagesAsReferences": true,
+        "allowFabricatedArchitecture": false,
+        "manualPaidCallApproval": true,
+        "finalComposer": "ffmpeg_or_existing_editor",
+        "qualityGate": "human_approval_required"
+      }
+    },
+    {
+      "id": "fb-2026-12-25",
+      "campaignName": "The Grand Tour (Presenter-Led Editorial)",
+      "goal": "Reference 1013.mp4 style luxury presenter-led ad with animated location map and brand seal",
+      "platform": "facebook",
+      "publishAtLocal": "2026-12-25T19:00:00+05:30",
+      "timezone": "Asia/Kolkata",
+      "status": "DRAFT_NOT_SCHEDULED",
+      "language": "Hinglish / English",
+      "designProfile": "PRESENTER_LED_PREMIUM_AD",
+      "visualDirection": "Warm neutral luxury, 1013.mp4 aesthetic, gold italic typography, dark animated transit map, branded crest outro",
+      "durationSeconds": 47,
+      "output": {
+        "width": 1080,
+        "height": 1920,
+        "fps": 24,
+        "format": "mp4",
+        "aspectRatio": "9:16"
+      },
+      "caption": "Step inside refined living. A masterclass in architecture and location. Book your private viewing today.",
+      "music": {
+        "enabled": true,
+        "licensedTrackAssetId": "ambient_lounge_luxury"
+      },
+      "voiceover": {
+        "enabled": false
+      },
+      "scenes": [
+        {
+          "assetId": "entry",
+          "seconds": 4,
+          "role": "hook",
+          "text": "A home crafted for those who think *ahead*.",
+          "language": "en",
+          "motion": "slow_push",
+          "runwayClip": false
+        },
+        {
+          "assetId": "exterior",
+          "seconds": 5,
+          "role": "property_intro",
+          "text": "Welcome to *The Grand Residence*.",
+          "language": "en",
+          "motion": "gentle_dolly_in",
+          "runwayClip": false
+        },
+        {
+          "assetId": "living_wide",
+          "seconds": 6,
+          "role": "cinematic_reveal",
+          "text": "Where every square foot is pure *luxury*.",
+          "language": "en",
+          "motion": "cinematic_glide",
+          "runwayClip": true
+        },
+        {
+          "assetId": "location_map",
+          "seconds": 6,
+          "role": "animated_location_map",
+          "text": "Connected to everything that *matters*.",
+          "language": "en",
+          "motion": "animated_vector_map",
+          "runwayClip": false
+        },
+        {
+          "assetId": "kitchen_wide",
+          "seconds": 6,
+          "role": "interior_feature",
+          "text": "Kitchen planned with *precision* and style.",
+          "language": "en",
+          "motion": "lateral_drift",
+          "runwayClip": false
+        },
+        {
+          "assetId": "master_wide",
+          "seconds": 6,
+          "role": "lifestyle_suite",
+          "text": "Your personal retreat of quiet *elegance*.",
+          "language": "en",
+          "motion": "slow_pan",
+          "runwayClip": false
+        },
+        {
+          "assetId": "terrace",
+          "seconds": 6,
+          "role": "terrace_living",
+          "text": "Panoramic sunset views from the *skyline terrace*.",
+          "language": "en",
+          "motion": "subtle_parallax",
+          "runwayClip": false
+        },
+        {
+          "assetId": "exterior",
+          "seconds": 8,
+          "role": "branded_end_card",
+          "text": "Book your private consultation *today*.",
+          "language": "en",
+          "motion": "luxury_brand_seal",
+          "runwayClip": false
+        }
+      ],
+      "generationPolicy": {
+        "runwayProvider": "runway_dev",
+        "videoModelCandidate": "gen3a_turbo",
+        "runwayClipCount": 1,
+        "runwayClipDurationSeconds": 5,
+        "runwayRatioCandidate": "768:1280",
+        "useRealClientImagesAsReferences": true,
+        "allowFabricatedArchitecture": false,
+        "manualPaidCallApproval": true,
+        "finalComposer": "ffmpeg_or_existing_editor",
+        "qualityGate": "human_approval_required"
+      }
+    }
+  ]
+}

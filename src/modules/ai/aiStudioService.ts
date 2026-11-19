@@ -6,7 +6,7 @@ import path from 'path';
 import { spawnMediaTool } from '../../utils/ffmpeg.js';
 import { AiStudioBatch, IAiStudioBatch, IAiStudioImage, IAiStudioReel, IPropertyVisionAnalysis, ReelVariationStyle } from '../../models/AiStudioBatch.js';
 import { Project } from '../../models/Project.js';
-import { MediaAsset, IMediaAsset } from '../../models/MediaAsset.js';
+import { MediaAsset, IMediaAsset, MediaCategory, MediaAspectRatio } from '../../models/MediaAsset.js';
 import { Creative } from '../../models/Creative.js';
 import { Subscription } from '../../models/Subscription.js';
 import { UsageLedger } from '../../models/UsageLedger.js';
@@ -16,6 +16,7 @@ import { env } from '../../config/env.js';
 import { AppError } from '../../utils/AppError.js';
 import { getAIProvider, aiOrchestrator } from './providers/index.js';
 import { jobQueue } from '../../queue/jobQueue.js';
+import { LuxuryReelDirector, LuxuryReelShotInput, LuxuryReelProjectInfo } from '../videolab/luxuryReelDirector.js';
 
 const MAX_ANALYZED_PHOTOS = 12;
 const PHOTO_CATEGORIES = [
@@ -133,6 +134,18 @@ export class AiStudioService {
       }
     }
 
+    if (asset.url && asset.url.startsWith('/storage/')) {
+      try {
+        const relKey = asset.url.replace(/^\/storage\//, '');
+        const localPath = defaultStorage.getAbsolutePath(relKey);
+        if (fsSync.existsSync(localPath)) {
+          return await fs.readFile(localPath);
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
     throw AppError.notFound(
       `Photo "${asset.filename || asset._id}" could not be loaded from storage. Re-upload it and try again.`,
       'MEDIA_FILE_MISSING'
@@ -156,8 +169,10 @@ export class AiStudioService {
   /**
    * Helper to load an original asset's pristine buffer by asset ID
    */
-  public async loadAssetBufferById(assetId: Types.ObjectId | string): Promise<Buffer> {
-    const asset = await MediaAsset.findById(this.toObjectId(assetId));
+  public async loadAssetBufferById(assetId: Types.ObjectId | string, orgId?: Types.ObjectId | string): Promise<Buffer> {
+    const query: Record<string, unknown> = { _id: this.toObjectId(assetId) };
+    if (orgId) query.organizationId = this.toObjectId(orgId);
+    const asset = await MediaAsset.findOne(query);
     if (asset) {
       return this.loadAssetBuffer(asset);
     }
@@ -1213,127 +1228,215 @@ Return JSON: {"photos": [...], "architecturalStyle": string, "dominantColors": [
     const posterFilePath = defaultStorage.getAbsolutePath(posterStorageKey);
     await fs.mkdir(path.dirname(outputFilePath), { recursive: true });
 
-    // Step A: Prepare 1080x1920 9:16 vertical images
-    const imageFiles: string[] = [];
-    for (let i = 0; i < N; i++) {
-      const img = selectedImages[i];
-      let buf: Buffer;
-      try {
-        const localPath = await defaultStorage.ensureLocal(img.storageKey);
-        buf = await fs.readFile(localPath);
-      } catch {
-        buf = await sharp({
-          create: { width: 1080, height: 1920, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 1 } },
-        }).png().toBuffer();
+    let finalReelDuration = totalDuration;
+
+    if (env.ENABLE_LUXURY_EDITORIAL_REEL) {
+      // Luxury Editorial Reel Pipeline: Consume untouched raw photos directly, eliminating UI artifacts and overlapping text
+      const mediaPhotos = await MediaAsset.find({
+        organizationId,
+        projectId: project._id,
+        type: 'IMAGE',
+      }).lean();
+
+      // Optimize for 12-15s vertical reels (4-5 curated shots for fast rendering & high social retention)
+      const maxShots = variationStyle === 'MODERN_PROMO_AD' ? 5 : 4;
+      const luxuryTargetImages = selectedImages.slice(0, maxShots);
+
+      const luxuryShots: LuxuryReelShotInput[] = [];
+      for (let i = 0; i < luxuryTargetImages.length; i++) {
+        const img = luxuryTargetImages[i];
+        let rawBuffer: Buffer | null = null;
+
+        // 1. Try finding original source asset via sourceAssetId
+        if (img.sourceAssetId) {
+          const matched = mediaPhotos.find((m) => m._id.toString() === img.sourceAssetId);
+          if (matched) {
+            try {
+              rawBuffer = await this.loadAssetBuffer(matched as any);
+            } catch {
+              // fallback below
+            }
+          }
+        }
+
+        // 2. If no sourceAssetId match, cycle through original mediaPhotos
+        if (!rawBuffer && mediaPhotos.length > 0) {
+          const fallbackAsset = mediaPhotos[i % mediaPhotos.length];
+          try {
+            rawBuffer = await this.loadAssetBuffer(fallbackAsset as any);
+          } catch {
+            // fallback below
+          }
+        }
+
+        // 3. Fallback to image storageKey
+        if (!rawBuffer) {
+          try {
+            const localPath = await defaultStorage.ensureLocal(img.storageKey);
+            rawBuffer = await fs.readFile(localPath);
+          } catch {
+            rawBuffer = await sharp({
+              create: { width: 1080, height: 1920, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 1 } },
+            }).png().toBuffer();
+          }
+        }
+
+        const room = img.category || 'Luxury Residence';
+        const featureDetail = img.featureHighlighted || `${project.location?.city || 'Chandigarh'} · Premium Architecture & Finishes`;
+        const cameraPerspective = img.cameraAngle || `${room.toUpperCase()} EXPERIENCE`;
+
+        luxuryShots.push({
+          sourceBuffer: rawBuffer,
+          roomName: room,
+          featureTitle: `${room} Residence`,
+          featureDetail,
+          cameraPerspective,
+        });
       }
 
-      const imgPath = path.join(tempDir, `reel_frame_${i}.jpg`);
-      await sharp(buf)
-        .resize(1080, 1920, { fit: 'cover', position: 'center' })
-        .jpeg({ quality: 88 })
-        .toFile(imgPath);
-      imageFiles.push(imgPath);
-    }
+      const luxuryProjectInfo: LuxuryReelProjectInfo = {
+        projectName: project.name || 'RS Heritage',
+        city: project.location?.city || 'Chandigarh',
+        category: project.category,
+        subtype: project.subtype,
+        reraNumber: project.reraNumber,
+        developerName: (project as any).developerName || 'RS Group',
+        variationStyle,
+        contactCta: 'Exclusive Walkthroughs by Appointment',
+      };
 
-    // Step B: Build FFmpeg filter_complex with zoompan and transitions
-    const filterParts: string[] = [];
-    for (let i = 0; i < N; i++) {
-      const frames = Math.ceil(clipDuration * fps);
-      // Vary movement: zoom-in vs pan-left vs pan-right
-      let zp = `zoompan=z='min(zoom+0.0018,1.25)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=${fps}`;
-      if (variationStyle === 'MODERN_PROMO_AD') {
-        zp = i % 2 === 0
-          ? `zoompan=z='min(zoom+0.003,1.35)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=${fps}`
-          : `zoompan=z='1.15':x='iw/2-(iw/zoom/2)+((iw/zoom/4)*${i % 4 < 2 ? 1 : -1}*(on/${frames}))':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=${fps}`;
-      } else if (i % 2 === 1) {
-        zp = `zoompan=z='if(lte(zoom,1.0),1.0,max(1.0,zoom-0.0018))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=${fps}`;
-      }
-
-      filterParts.push(`[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,${zp}[zp${i}]`);
-    }
-
-    // Chain xfade transitions
-    let lastLabel = '[zp0]';
-    for (let i = 1; i < N; i++) {
-      const offset = i * clipDuration - fadeDuration;
-      const outLabel = i === N - 1 ? '[vmerged]' : `[vx${i}]`;
-      filterParts.push(`${lastLabel}[zp${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${offset.toFixed(2)}${outLabel}`);
-      lastLabel = i === N - 1 ? '[vmerged]' : `[vx${i}]`;
-    }
-
-    if (N === 1) {
-      filterParts.push('[zp0]copy[vmerged]');
-    }
-
-    // Text & branding graphic overlays
-    const projName = (project.name || 'Luxury Property').replace(/['"|\\]/g, ' ');
-    const drawSafe = (t: string) => t.replace(/['"|\\:%]/g, ' ');
-    const locName = drawSafe(
-      [
-        project.location?.city,
-        project.reraNumber ? `RERA ${project.reraNumber}` : '',
-        'AI-generated - Illustrative',
-      ]
-        .filter(Boolean)
-        .join('  •  ')
-    );
-
-    filterParts.push(
-      `[vmerged]drawtext=text='${projName}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-280:shadowcolor=black:shadowx=2:shadowy=2,` +
-      `drawtext=text='${styleSubtitle}':fontcolor=${primaryAccentColor}:fontsize=26:x=(w-text_w)/2:y=h-220:shadowcolor=black:shadowx=1:shadowy=1,` +
-      `drawtext=text='${locName}':fontcolor=#E4E4E7:fontsize=22:x=(w-text_w)/2:y=h-175:shadowcolor=black:shadowx=1:shadowy=1[vout]`
-    );
-
-    const filterComplex = filterParts.join(';');
-
-    // Build FFmpeg command inputs
-    const inputArgs: string[] = [];
-    for (const imgPath of imageFiles) {
-      inputArgs.push('-loop', '1', '-t', String(clipDuration + fadeDuration + 0.2), '-i', imgPath);
-    }
-
-    const binary = this.resolveFfmpegBinary();
-    const ffmpegArgs = [
-      ...inputArgs,
-      '-filter_complex', filterComplex,
-      '-map', '[vout]',
-      '-c:v', 'libx264',
-      '-preset', 'fast',
-      '-crf', '22',
-      '-pix_fmt', 'yuv420p',
-      '-t', String(totalDuration),
-      '-r', String(fps),
-      '-an',
-      '-y',
-      outputFilePath,
-    ];
-
-    logger.info({ cmd: [binary, ...ffmpegArgs].join(' ') }, 'Executing AI Reel generation via FFmpeg');
-
-    await new Promise<void>((resolve, reject) => {
-      const proc = spawnMediaTool(binary, ffmpegArgs);
-      let stderr = '';
-      proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
-      proc.on('error', reject);
-      proc.on('exit', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-300)}`));
-      });
-    });
-
-    // Extract high-quality poster frame from 1.0s
-    await new Promise<void>((resolve) => {
-      const pProc = spawnMediaTool(binary, [
-        '-ss', '1.0',
-        '-i', outputFilePath,
-        '-vframes', '1',
-        '-q:v', '2',
-        '-y',
+      const result = await LuxuryReelDirector.renderLuxuryReel({
+        shots: luxuryShots,
+        project: luxuryProjectInfo,
+        outputFilePath,
         posterFilePath,
-      ]);
-      pProc.on('close', () => resolve());
-      pProc.on('error', () => resolve());
-    });
+        scratchDir: tempDir,
+      });
+
+      finalReelDuration = result.duration;
+    } else {
+      // Legacy FFmpeg drawtext fallback
+      // Step A: Prepare 1080x1920 9:16 vertical images
+      const imageFiles: string[] = [];
+      for (let i = 0; i < N; i++) {
+        const img = selectedImages[i];
+        let buf: Buffer;
+        try {
+          const localPath = await defaultStorage.ensureLocal(img.storageKey);
+          buf = await fs.readFile(localPath);
+        } catch {
+          buf = await sharp({
+            create: { width: 1080, height: 1920, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 1 } },
+          }).png().toBuffer();
+        }
+
+        const imgPath = path.join(tempDir, `reel_frame_${i}.jpg`);
+        await sharp(buf)
+          .resize(1080, 1920, { fit: 'cover', position: 'center' })
+          .jpeg({ quality: 88 })
+          .toFile(imgPath);
+        imageFiles.push(imgPath);
+      }
+
+      // Step B: Build FFmpeg filter_complex with zoompan and transitions
+      const filterParts: string[] = [];
+      for (let i = 0; i < N; i++) {
+        const frames = Math.ceil(clipDuration * fps);
+        let zp = `zoompan=z='min(zoom+0.0018,1.25)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=${fps}`;
+        if (variationStyle === 'MODERN_PROMO_AD') {
+          zp = i % 2 === 0
+            ? `zoompan=z='min(zoom+0.003,1.35)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=${fps}`
+            : `zoompan=z='1.15':x='iw/2-(iw/zoom/2)+((iw/zoom/4)*${i % 4 < 2 ? 1 : -1}*(on/${frames}))':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=${fps}`;
+        } else if (i % 2 === 1) {
+          zp = `zoompan=z='if(lte(zoom,1.0),1.0,max(1.0,zoom-0.0018))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=${fps}`;
+        }
+
+        filterParts.push(`[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,${zp}[zp${i}]`);
+      }
+
+      // Chain xfade transitions
+      let lastLabel = '[zp0]';
+      for (let i = 1; i < N; i++) {
+        const offset = i * clipDuration - fadeDuration;
+        const outLabel = i === N - 1 ? '[vmerged]' : `[vx${i}]`;
+        filterParts.push(`${lastLabel}[zp${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${offset.toFixed(2)}${outLabel}`);
+        lastLabel = i === N - 1 ? '[vmerged]' : `[vx${i}]`;
+      }
+
+      if (N === 1) {
+        filterParts.push('[zp0]copy[vmerged]');
+      }
+
+      // Text & branding graphic overlays
+      const projName = (project.name || 'Luxury Property').replace(/['"|\\]/g, ' ');
+      const drawSafe = (t: string) => t.replace(/['"|\\:%]/g, ' ');
+      const locName = drawSafe(
+        [
+          project.location?.city,
+          project.reraNumber ? `RERA ${project.reraNumber}` : '',
+          'AI-generated - Illustrative',
+        ]
+          .filter(Boolean)
+          .join('  •  ')
+      );
+
+      filterParts.push(
+        `[vmerged]drawtext=text='${projName}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-280:shadowcolor=black:shadowx=2:shadowy=2,` +
+        `drawtext=text='${styleSubtitle}':fontcolor=${primaryAccentColor}:fontsize=26:x=(w-text_w)/2:y=h-220:shadowcolor=black:shadowx=1:shadowy=1,` +
+        `drawtext=text='${locName}':fontcolor=#E4E4E7:fontsize=22:x=(w-text_w)/2:y=h-175:shadowcolor=black:shadowx=1:shadowy=1[vout]`
+      );
+
+      const filterComplex = filterParts.join(';');
+
+      // Build FFmpeg command inputs
+      const inputArgs: string[] = [];
+      for (const imgPath of imageFiles) {
+        inputArgs.push('-loop', '1', '-t', String(clipDuration + fadeDuration + 0.2), '-i', imgPath);
+      }
+
+      const binary = this.resolveFfmpegBinary();
+      const ffmpegArgs = [
+        ...inputArgs,
+        '-filter_complex', filterComplex,
+        '-map', '[vout]',
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '22',
+        '-pix_fmt', 'yuv420p',
+        '-t', String(totalDuration),
+        '-r', String(fps),
+        '-an',
+        '-y',
+        outputFilePath,
+      ];
+
+      logger.info({ cmd: [binary, ...ffmpegArgs].join(' ') }, 'Executing AI Reel generation via FFmpeg');
+
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawnMediaTool(binary, ffmpegArgs);
+        let stderr = '';
+        proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+        proc.on('error', reject);
+        proc.on('exit', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-300)}`));
+        });
+      });
+
+      // Extract high-quality poster frame from 1.0s
+      await new Promise<void>((resolve) => {
+        const pProc = spawnMediaTool(binary, [
+          '-ss', '1.0',
+          '-i', outputFilePath,
+          '-vframes', '1',
+          '-q:v', '2',
+          '-y',
+          posterFilePath,
+        ]);
+        pProc.on('close', () => resolve());
+        pProc.on('error', () => resolve());
+      });
+    }
 
     // Clean scratch directory
     try {
@@ -1357,7 +1460,7 @@ Return JSON: {"photos": [...], "architecturalStyle": string, "dominantColors": [
       videoUrl,
       posterFrameUrl,
       storageKey,
-      durationSeconds: totalDuration,
+      durationSeconds: finalReelDuration,
       selectedImageIds: selectedImages.map((img) => img.id),
       approvalStatus: 'DRAFT',
       createdAt: new Date(),
@@ -1496,6 +1599,13 @@ Return JSON: {"photos": [...], "architecturalStyle": string, "dominantColors": [
     const ALLOWED_MIMES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
     const createdAssets: IMediaAsset[] = [];
 
+    const existingCount = await MediaAsset.countDocuments({ organizationId, projectId });
+    const existingCover = await MediaAsset.exists({
+      organizationId,
+      projectId,
+      isCover: true,
+    });
+
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       if (!ALLOWED_MIMES.has(f.mimetype.toLowerCase())) {
@@ -1525,31 +1635,66 @@ Return JSON: {"photos": [...], "architecturalStyle": string, "dominantColors": [
       const storageKey = `media/${organizationId.toString()}/${projectId.toString()}/${Date.now()}_${cleanName}`;
       await defaultStorage.saveBuffer(storageKey, f.buffer);
 
-      let aspectRatio = 'CUSTOM';
+      let thumbnailKey: string | undefined;
+      try {
+        const thumbBuffer = await sharp(f.buffer)
+          .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toBuffer();
+        const thumbKey = `media/${organizationId.toString()}/${projectId.toString()}/thumb_${Date.now()}_${cleanName}.webp`;
+        await defaultStorage.saveBuffer(thumbKey, thumbBuffer);
+        thumbnailKey = thumbKey;
+      } catch {
+        // Thumbnail generation is optional; graceful fallback
+      }
+
+      let aspectRatio: MediaAspectRatio = 'OTHER';
       const ratio = meta.width / meta.height;
       if (Math.abs(ratio - 1.0) < 0.05) aspectRatio = '1:1';
       else if (Math.abs(ratio - 0.8) < 0.05) aspectRatio = '4:5';
       else if (Math.abs(ratio - 16 / 9) < 0.1) aspectRatio = '16:9';
       else if (Math.abs(ratio - 9 / 16) < 0.1) aspectRatio = '9:16';
 
+      const inferredCategory = inferStudioCategoryFromFilename(f.originalname);
+      let mediaCategory: MediaCategory = 'INTERIOR';
+      if (inferredCategory === 'Exterior / Facade') mediaCategory = 'EXTERIOR';
+      else if (inferredCategory === 'Floor Plan') mediaCategory = 'FLOOR_PLANS';
+      else if (inferredCategory === 'Amenities') mediaCategory = 'AMENITIES';
+      else if (inferredCategory === 'Other') mediaCategory = 'OTHER';
+
+      const isCover = !existingCover && i === 0;
+
       const asset = await MediaAsset.create({
         organizationId,
         projectId,
         type: 'IMAGE',
-        category: 'INTERIOR',
+        category: mediaCategory,
+        roomType: inferredCategory,
+        room: inferredCategory,
         filename: cleanName,
-        originalName: f.originalname,
         storageKey,
         url: defaultStorage.getUrl(storageKey),
-        mimeType: f.mimetype,
-        fileSizeBytes: f.size,
-        dimensions: { width: meta.width, height: meta.height },
+        mimetype: f.mimetype.toLowerCase(),
+        sizeBytes: f.size,
+        width: meta.width,
+        height: meta.height,
         aspectRatio,
+        thumbnailKey,
+        actualOrIllustrative: 'ACTUAL',
         isApproved: true,
         approvalStatus: 'APPROVED',
-        rightsConsent: { confirmed: true, source: 'CLIENT_STUDIO_UPLOAD' },
+        isCover,
+        sortOrder: existingCount + i,
+        processingStatus: 'ready',
+        rightsConsent: { confirmed: true, at: new Date() },
         tags: ['ClientUpload', 'PropertyPhoto', 'StudioSource'],
       });
+
+      if (isCover) {
+        await Project.findByIdAndUpdate(projectId, {
+          coverImageUrl: defaultStorage.getUrl(storageKey),
+        });
+      }
 
       createdAssets.push(asset);
     }
@@ -1755,26 +1900,80 @@ Return JSON: {"photos": [...], "architecturalStyle": string, "dominantColors": [
     }
 
     if (img.savedToMediaId) {
-      const existing = await MediaAsset.findOne({ _id: img.savedToMediaId, organizationId });
+      const existing = await MediaAsset.findOne({ _id: this.toObjectId(img.savedToMediaId), organizationId });
       if (existing) return existing;
     }
+
+    let sizeBytes = 1024 * 1024; // fallback 1MB
+    let width = 1080;
+    let height = 1350;
+    let thumbnailKey: string | undefined;
+
+    try {
+      if (img.storageKey) {
+        const localPath = await defaultStorage.ensureLocal(img.storageKey);
+        if (fsSync.existsSync(localPath)) {
+          const stat = await fs.stat(localPath);
+          sizeBytes = stat.size;
+          const meta = await sharp(localPath).metadata();
+          if (meta.width) width = meta.width;
+          if (meta.height) height = meta.height;
+
+          const thumbBuffer = await sharp(localPath)
+            .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toBuffer();
+          const cleanTitle = (img.title || 'image').toLowerCase().replace(/[^a-z0-9]/g, '_');
+          const thumbKey = `media/${organizationId.toString()}/${batch.projectId.toString()}/thumb_${Date.now()}_${cleanTitle}.webp`;
+          await defaultStorage.saveBuffer(thumbKey, thumbBuffer);
+          thumbnailKey = thumbKey;
+        }
+      }
+    } catch (err) {
+      logger.warn({ err: (err as Error).message }, 'Failed to compute metadata or thumbnail for saved studio image');
+    }
+
+    let aspectRatio: MediaAspectRatio = '4:5';
+    if (img.aspectRatio === '1:1') aspectRatio = '1:1';
+    else if (img.aspectRatio === '9:16') aspectRatio = '9:16';
+    else if (img.aspectRatio === '4:5') aspectRatio = '4:5';
+    else aspectRatio = 'OTHER';
+
+    let mediaCategory: MediaCategory = 'INTERIOR';
+    if (img.category) {
+      const lowerCat = img.category.toLowerCase();
+      if (lowerCat.includes('exterior') || lowerCat.includes('facade')) mediaCategory = 'EXTERIOR';
+      else if (lowerCat.includes('amenit')) mediaCategory = 'AMENITIES';
+      else if (lowerCat.includes('plan')) mediaCategory = 'FLOOR_PLANS';
+    }
+
+    const cleanFilename = `${(img.title || 'studio_image').toLowerCase().replace(/[^a-z0-9]/g, '_')}.png`;
+    const sortOrder = await MediaAsset.countDocuments({ organizationId, projectId: batch.projectId });
 
     const asset = await MediaAsset.create({
       organizationId,
       projectId: batch.projectId,
       type: 'IMAGE',
-      category: 'INTERIOR',
-      filename: `${img.title.toLowerCase().replace(/[^a-z0-9]/g, '_')}.png`,
-      originalName: `${img.title}.png`,
+      category: mediaCategory,
+      roomType: img.category || 'Living Room',
+      room: img.category || 'Living Room',
+      filename: cleanFilename,
       storageKey: img.storageKey,
-      url: img.url,
-      mimeType: 'image/png',
-      aspectRatio: '4:5',
-      dimensions: { width: 1080, height: 1350 },
+      url: img.url || defaultStorage.getUrl(img.storageKey),
+      mimetype: 'image/png',
+      sizeBytes,
+      width,
+      height,
+      aspectRatio,
+      thumbnailKey,
+      actualOrIllustrative: 'ILLUSTRATIVE',
       isApproved: true,
       approvalStatus: 'APPROVED',
-      rightsConsent: { confirmed: true, source: 'AI_STUDIO_GENERATION' },
-      tags: ['AIGenerated', 'MarketingCreative', img.category],
+      isCover: false,
+      sortOrder,
+      processingStatus: 'ready',
+      rightsConsent: { confirmed: true, at: new Date() },
+      tags: ['AIGenerated', 'MarketingCreative', img.category || 'StudioShot'],
     });
 
     img.savedToMediaId = asset._id.toString();
