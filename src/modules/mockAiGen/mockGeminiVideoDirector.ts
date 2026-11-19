@@ -1,3 +1,4 @@
+import fs from 'fs';
 import fsPromises from 'fs/promises';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
@@ -34,10 +35,14 @@ export class MockGeminiVideoDirector {
   private client: GoogleGenAI | null = null;
   private cumulativeSpendUsd = 0;
 
-  constructor() {
-    if (env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim().length > 0) {
-      this.client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+  private getClient(): GoogleGenAI | null {
+    if (!this.client) {
+      const key = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+      if (key && key.trim().length > 0) {
+        this.client = new GoogleGenAI({ apiKey: key });
+      }
     }
+    return this.client;
   }
 
   public getCumulativeSpendUsd(): number {
@@ -53,8 +58,21 @@ export class MockGeminiVideoDirector {
     originalName: string,
     durationSeconds: number
   ): Promise<GeminiSceneAnalysis> {
-    if (!this.client) {
+    const activeClient = this.getClient();
+    if (!activeClient) {
       throw new Error('Gemini API client is not configured. Please check GEMINI_API_KEY in environment.');
+    }
+
+    // Cache check: return cached analysis if already completed
+    const cacheDir = path.resolve(path.dirname(proxyPath), '../cache');
+    const cachePath = path.join(cacheDir, `gemini_${assetId}.json`);
+    if (fs.existsSync(cachePath)) {
+      try {
+        const cachedRaw = await fsPromises.readFile(cachePath, 'utf8');
+        const cached = JSON.parse(cachedRaw) as GeminiSceneAnalysis;
+        logger.info({ assetId }, 'Loaded Gemini analysis from cache');
+        return cached;
+      } catch (e) {}
     }
 
     // Budget Cap Enforcement
@@ -64,9 +82,9 @@ export class MockGeminiVideoDirector {
     }
 
     const videoBuffer = await fsPromises.readFile(proxyPath);
-    let model = env.GEMINI_ANALYSIS_MODEL || 'gemini-3.8-flash';
-    if (model === 'gemini-2.5-flash') {
-      model = 'gemini-3.8-flash';
+    let preferredModel = env.GEMINI_ANALYSIS_MODEL || 'gemini-3.1-flash-lite';
+    if (preferredModel === 'gemini-2.5-flash') {
+      preferredModel = 'gemini-3.1-flash-lite';
     }
 
     const systemInstruction = `You are an Autonomous AI Video Director specializing in luxury and modern real estate commercial video production.
@@ -94,7 +112,7 @@ Review Flag:
 - NEEDS_REVIEW: Marginally usable, poor lighting, or requires human check.
 - REJECT_LOW_QUALITY: Blurry, underexposed, uninformative closeup of door handles/unfinished walls with no spatial context.`;
 
-    const prompt = `Analyze this video clip (${durationSeconds}s duration).
+    const prompt = `Analyze this video clip (${durationSeconds}s duration, filename: "${originalName}").
 Return a strict JSON object with this exact structure:
 {
   "predictedCategory": "exterior | outdoor_presenter | gate_signage | living | bedroom | kitchen | bathroom | balcony_terrace | staircase | poor_quality_detail",
@@ -120,30 +138,89 @@ Return a strict JSON object with this exact structure:
   "summary": "1-2 sentence concise factual description of what is physically shown"
 }`;
 
-    const response = await this.client.models.generateContent({
-      model,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                data: videoBuffer.toString('base64'),
-                mimeType: 'video/mp4',
-              },
-            },
-            {
-              text: prompt,
-            },
-          ],
+    const candidateModels = [
+      preferredModel,
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash',
+    ].filter((v, i, a) => a.indexOf(v) === i);
+
+    // Prepare media payload: if video is larger than 3MB, send the 3 extracted keyframes
+    // for lightning-fast inference (< 2 seconds) and zero socket drops. Otherwise send video.
+    const parts: any[] = [];
+    const thumbsDir = path.resolve(path.dirname(proxyPath), '../thumbs');
+    const thumbFiles = [
+      path.join(thumbsDir, `${assetId}_thumb_15.jpg`),
+      path.join(thumbsDir, `${assetId}_thumb_50.jpg`),
+      path.join(thumbsDir, `${assetId}_thumb_85.jpg`),
+    ].filter((tp) => fs.existsSync(tp));
+
+    if (videoBuffer.length > 3 * 1024 * 1024 && thumbFiles.length > 0) {
+      for (const tf of thumbFiles) {
+        const thumbBuf = await fsPromises.readFile(tf);
+        parts.push({
+          inlineData: {
+            data: thumbBuf.toString('base64'),
+            mimeType: 'image/jpeg',
+          },
+        });
+      }
+    } else {
+      parts.push({
+        inlineData: {
+          data: videoBuffer.toString('base64'),
+          mimeType: 'video/mp4',
         },
-      ],
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-      },
-    });
+      });
+    }
+
+    parts.push({ text: prompt });
+
+    let response: any = null;
+    let activeModel = preferredModel;
+    let lastErr: any = null;
+
+    for (const m of candidateModels) {
+      activeModel = m;
+      let retries = 2;
+      let delayMs = 2000;
+
+      while (retries > 0) {
+        try {
+          response = await activeClient.models.generateContent({
+            model: m,
+            contents: [
+              {
+                role: 'user',
+                parts,
+              },
+            ],
+            config: {
+              systemInstruction,
+              responseMimeType: 'application/json',
+              temperature: 0.2,
+              abortSignal: AbortSignal.timeout(20000),
+            },
+          });
+          break; // Succeeded
+        } catch (err: any) {
+          lastErr = err;
+          if ((err.status === 503 || err.status === 429) && retries > 1) {
+            logger.warn(`Gemini ${m} returned ${err.status} (high demand), retrying in ${delayMs}ms...`);
+            await new Promise((r) => setTimeout(r, delayMs));
+            delayMs *= 2;
+            retries--;
+            continue;
+          }
+          break;
+        }
+      }
+
+      if (response) break;
+    }
+
+    if (!response) {
+      throw lastErr || new Error('Failed to generate analysis from Gemini models');
+    }
 
     const text = response.text || '{}';
     let parsed: any;
@@ -165,7 +242,7 @@ Return a strict JSON object with this exact structure:
     const costUsd = (inputTokens / 1_000_000) * 0.15 + (outputTokens / 1_000_000) * 0.60;
     this.cumulativeSpendUsd += costUsd;
 
-    return {
+    const result: GeminiSceneAnalysis = {
       assetId,
       originalName,
       predictedCategory: parsed.predictedCategory || 'unknown',
@@ -188,6 +265,15 @@ Return a strict JSON object with this exact structure:
       },
       estimatedCostUsd: Math.round(costUsd * 10000) / 10000,
     };
+
+    try {
+      await fsPromises.mkdir(cacheDir, { recursive: true });
+      await fsPromises.writeFile(cachePath, JSON.stringify(result, null, 2), 'utf8');
+    } catch (e) {
+      logger.warn({ cachePath }, 'Failed to write Gemini analysis cache');
+    }
+
+    return result;
   }
 }
 

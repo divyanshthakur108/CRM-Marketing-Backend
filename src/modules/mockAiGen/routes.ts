@@ -18,6 +18,7 @@ import {
   resetMockData,
   rotateMockAsset,
   preprocessAllVideos,
+  generateAutonomousStoryboards,
 } from './controller.js';
 
 const router = Router();
@@ -42,6 +43,7 @@ router.post('/auto-map', autoMapMockSlots);
 
 // Campaigns & Creative Direction
 router.get('/campaigns', getMockCampaigns);
+router.post('/director/generate-storyboards', generateAutonomousStoryboards);
 
 // Runway pilot image-to-video with strict cost gate
 router.post('/runway-pilot', triggerRunwayPilot);

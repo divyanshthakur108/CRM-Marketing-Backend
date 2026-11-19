@@ -8,6 +8,7 @@ import { SarvamAIClient } from 'sarvamai';
 import { logger } from '../../config/logger.js';
 import { runFfmpeg, resolveFfmpegBinary, resolveFfprobeBinary } from '../../utils/ffmpeg.js';
 import { MockCampaign, MockPropertyProject } from './mockPropertySchema.js';
+import { mockAiGenStorage } from './mockAiGenStorage.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -355,6 +356,23 @@ export class MockVoiceoverService {
       });
     }
 
+    // Diagnostic Instrumentation: Probe and log every synthesized audio clip
+    logger.info('--- VOICE TRACK INSTRUMENTATION AUDIT ---');
+    for (let i = 0; i < batchItems.length; i++) {
+      const clipDuration = await this.probeAudioDuration(batchItems[i].outFile);
+      logger.info(
+        {
+          sceneIndex: batchItems[i].index,
+          charCount: batchItems[i].text.length,
+          text: batchItems[i].text,
+          startMs: batchItems[i].startMs,
+          measuredClipDurationSec: clipDuration,
+          clipFile: path.basename(batchItems[i].outFile),
+        },
+        `Scene ${batchItems[i].index} Audio Input Metric`
+      );
+    }
+
     // Assemble all clips with exact timeline delay offsets into single master track
     const ffmpegArgs: string[] = ['-y'];
     const filterSegments: string[] = [];
@@ -367,7 +385,11 @@ export class MockVoiceoverService {
       amixInputs.push(`[a${i}]`);
     }
 
-    const filterComplex = `${filterSegments.join('; ')}; ${amixInputs.join('')}amix=inputs=${batchItems.length}:duration=first:dropout_transition=0:normalize=0[aout]`;
+    // FIX (Phase A): Use duration=longest (was duration=first which caused audio to cutoff at ~4.3s!)
+    // Plus Vocal Clarity Chain on narration before mixing:
+    // highpass=f=100 (subsonic rumble cut), equalizer=f=320 (mud cut -5dB), equalizer=f=3200 (presence boost +5dB), acompressor
+    const vocalDspChain = 'highpass=f=100,equalizer=f=320:t=q:w=1.2:g=-5,equalizer=f=3200:t=q:w=1.5:g=+5,acompressor=threshold=-18dB:ratio=2.5:attack=15:release=120,aformat=channel_layouts=stereo:sample_rates=48000';
+    const filterComplex = `${filterSegments.join('; ')}; ${amixInputs.join('')}amix=inputs=${batchItems.length}:duration=longest:dropout_transition=0:normalize=0[aout_raw]; [aout_raw]${vocalDspChain}[aout]`;
 
     ffmpegArgs.push(
       '-filter_complex', filterComplex,
@@ -380,40 +402,60 @@ export class MockVoiceoverService {
     await runFfmpeg(ffmpegArgs);
     const duration = await this.probeAudioDuration(outputWavPath);
 
+    logger.info(
+      { outputWavPath, durationSeconds: duration, provider: providerUsed, scenesCount: batchItems.length },
+      'Master voiceover track assembled and mastered with vocal DSP chain'
+    );
+
     await fsPromises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     return { audioPath: outputWavPath, durationSeconds: duration, wasUploaded: false, provider: providerUsed };
   }
 
   /**
-   * Generates a warm, ambient luxury lounge music bed using procedural harmonic audio synthesis.
+   * Generates a warm, ambient luxury lounge music bed using genuine acoustic lounge bed.
+   * FIX (Phase A): Uses royalty-free acoustic bed instead of harsh 110/138/164Hz sine waves that clash with vocal formants.
    */
   public async generateAmbientMusicTrack(durationSeconds: number, outputPath: string): Promise<string> {
     const fadeOutStart = Math.max(1, durationSeconds - 2.5);
-    const audioSynthFilter = '0.10*sin(2*PI*110*t)+0.07*sin(2*PI*138.59*t)+0.07*sin(2*PI*164.81*t)+0.04*sin(2*PI*207.65*t)';
+    const audioBedPath = path.join(mockAiGenStorage.getRoot(), 'luxury_ambient_music.aac');
 
-    await runFfmpeg([
-      '-y',
-      '-f', 'lavfi',
-      '-i', `aevalsrc=${audioSynthFilter}:d=${durationSeconds + 2}:s=48000`,
-      '-af', `lowpass=f=420,volume=0.30,afade=t=in:d=1.5,afade=t=out:st=${fadeOutStart}:d=2.5`,
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      outputPath,
-    ]);
+    if (fs.existsSync(audioBedPath)) {
+      await runFfmpeg([
+        '-y',
+        '-stream_loop', '-1',
+        '-i', audioBedPath,
+        '-t', String(durationSeconds + 1),
+        '-af', `volume=0.20,afade=t=in:d=1.5,afade=t=out:st=${fadeOutStart}:d=2.5,aformat=channel_layouts=stereo:sample_rates=48000`,
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        outputPath,
+      ]);
+    } else {
+      // Warm acoustic pad fallback without resonant vocal-range sinusoidal peaks
+      await runFfmpeg([
+        '-y',
+        '-f', 'lavfi',
+        '-i', `anoisesrc=d=${durationSeconds + 2}:c=pink:r=48000:a=0.03`,
+        '-af', `lowpass=f=320,volume=0.20,afade=t=in:d=1.5,afade=t=out:st=${fadeOutStart}:d=2.5,aformat=channel_layouts=stereo:sample_rates=48000`,
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        outputPath,
+      ]);
+    }
 
     return outputPath;
   }
 
   /**
    * Writes the ASS subtitle file formatted with Libass DirectWrite styling and gold italics.
-   * Large, readable 54px typography with subtle black outline and soft shadow.
+   * FIX (Phase B): Spacing=0 (eliminates split Devanagari matras), Noto Sans Devanagari font.
    */
   public async writeAssSubtitleFile(
     timeline: CaptionsTimeline,
     outputAssPath: string,
     options?: { isHindi?: boolean }
   ): Promise<string> {
-    const fontName = options?.isHindi ? 'Nirmala UI' : 'Playfair Display';
+    const fontName = options?.isHindi ? 'Noto Sans Devanagari' : 'Playfair Display';
 
     const assContent = `[Script Info]
 ScriptType: v4.00+
@@ -424,7 +466,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: LuxuryCaption,${fontName},52,&H00FFFFFF,&H0037AFD4,&H00050505,&H80000000,1,0,0,0,100,100,1.2,0,1,3,4,2,64,64,${timeline.safeZoneMarginV},1
+Style: LuxuryCaption,${fontName},56,&H00FFFFFF,&H0037AFD4,&H00050505,&H80000000,1,0,0,0,100,100,0,0,1,3,4,2,64,64,${timeline.safeZoneMarginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

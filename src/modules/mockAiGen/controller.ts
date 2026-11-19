@@ -328,3 +328,17 @@ export const resetMockData = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+export const generateAutonomousStoryboards = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await mockAiGenService.generateAutonomousStoryboards();
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: 'Autonomous AI Video Director generated dual storyboards successfully.',
+    });
+  } catch (err: any) {
+    logger.error('Error generating autonomous storyboards:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

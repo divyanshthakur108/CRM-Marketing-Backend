@@ -504,7 +504,7 @@
       ],
       "generationPolicy": {
         "runwayProvider": "runway_dev",
-        "videoModelCandidate": "gen3a_turbo",
+        "videoModelCandidate": "gen4_turbo",
         "runwayClipCount": 2,
         "runwayClipDurationSeconds": 5,
         "runwayRatioCandidate": "720:1280",
@@ -609,7 +609,7 @@
       ],
       "generationPolicy": {
         "runwayProvider": "runway_dev",
-        "videoModelCandidate": "gen3a_turbo",
+        "videoModelCandidate": "gen4_turbo",
         "runwayClipCount": 2,
         "runwayClipDurationSeconds": 5,
         "runwayRatioCandidate": "720:1280",
@@ -723,7 +723,7 @@
       ],
       "generationPolicy": {
         "runwayProvider": "runway_dev",
-        "videoModelCandidate": "gen3a_turbo",
+        "videoModelCandidate": "gen4_turbo",
         "runwayClipCount": 1,
         "runwayClipDurationSeconds": 5,
         "runwayRatioCandidate": "768:1280",

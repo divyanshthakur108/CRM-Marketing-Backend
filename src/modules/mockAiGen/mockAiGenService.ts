@@ -13,6 +13,7 @@ import { mockRunwayClient, RunwayTaskResult } from './mockRunwayClient.js';
 import { mockAdComposer, ComposedAdResult, isBannedAsset } from './mockAdComposer.js';
 import { mockVideoAnalyzer, AnalyzedVideoMetadata } from './mockVideoAnalyzer.js';
 import { mockVideoPreprocessor, PreprocessedAssetMetadata } from './mockVideoPreprocessor.js';
+import { mockAiVideoDirector, DirectedStoryboardsResult } from './mockAiVideoDirector.js';
 import { env } from '../../config/env.js';
 
 export interface MockSlotMapping {
@@ -443,20 +444,59 @@ export class MockAiGenService {
     const slots = this.state!.project.media.assets;
     const usedAssetIds = new Set<string>();
 
+    // If FEATURE_AI_VIDEO_DIRECTOR is enabled, use verified Gemini evidence rather than regex/slot order
+    if (env.FEATURE_AI_VIDEO_DIRECTOR) {
+      try {
+        const inventory = await mockAiVideoDirector.loadAnalyzedInventory();
+        const eligibleInventory = inventory.filter(
+          (inv) =>
+            inv.gemini.reviewFlag !== 'REJECT_LOW_QUALITY' &&
+            inv.gemini.predictedCategory !== 'poor_quality_detail' &&
+            !['f1713ee9', '085c3850', 'a682c228', 'cd027aa2'].some((id) => inv.gemini.assetId.includes(id)) &&
+            !inv.filename.includes('4.12.54') &&
+            !inv.filename.includes('4.13.00')
+        );
+
+        for (const slot of slots) {
+          // Normalize areaId to match categories
+          let targetCategory = slot.areaId.toLowerCase();
+          if (targetCategory === 'entrance') targetCategory = 'gate_signage';
+
+          const match = eligibleInventory.find((item) => {
+            if (usedAssetIds.has(item.gemini.assetId)) return false;
+            return item.gemini.predictedCategory.toLowerCase().includes(targetCategory) ||
+              targetCategory.includes(item.gemini.predictedCategory.toLowerCase());
+          });
+
+          if (match) {
+            usedAssetIds.add(match.gemini.assetId);
+            await this.mapAssetToSlot(slot.id, match.gemini.assetId);
+          }
+        }
+
+        // Also update creative campaigns with evidence-directed storyboards
+        const storyboardsResult = await mockAiVideoDirector.generateDualStoryboards();
+        this.state!.project.campaigns = [storyboardsResult.videoA, storyboardsResult.videoB];
+        await this.persistState();
+
+        return this.state!.slotMappings;
+      } catch (err: any) {
+        logger.warn({ err: err.message }, 'Autonomous Director mapping failed, using fallback heuristic mapping');
+      }
+    }
+
+    // Fallback heuristic mapping
     for (const slot of slots) {
-      // 1. First try to find an unused asset matching the slot's area
       let chosen = pool.find((item) => {
         if (usedAssetIds.has(item.assetId)) return false;
         const room = (item as any).userRoomOverride || (item as any).inferredRoom || '';
         return room.toLowerCase().includes(slot.areaId.toLowerCase()) || slot.areaId.toLowerCase().includes(room.toLowerCase());
       });
 
-      // 2. Fall back to any unused asset in pool
       if (!chosen) {
         chosen = pool.find((item) => !usedAssetIds.has(item.assetId));
       }
 
-      // 3. Fall back to modulo if pool is smaller than slots
       if (!chosen) {
         chosen = pool[slots.indexOf(slot) % pool.length];
       }
@@ -468,6 +508,17 @@ export class MockAiGenService {
     }
 
     return this.state!.slotMappings;
+  }
+
+  /**
+   * Generates dual storyboards (Video A & Video B) via Autonomous AI Video Director
+   */
+  public async generateAutonomousStoryboards(): Promise<DirectedStoryboardsResult> {
+    if (!this.state) await this.init();
+    const result = await mockAiVideoDirector.generateDualStoryboards();
+    this.state!.project.campaigns = [result.videoA, result.videoB];
+    await this.persistState();
+    return result;
   }
 
   /**
@@ -526,7 +577,7 @@ export class MockAiGenService {
       );
     }
 
-    const modelCandidate = (campaign.generationPolicy?.videoModelCandidate as 'seedance2_5' | 'gen3a_turbo') || 'gen3a_turbo';
+    const modelCandidate = (campaign.generationPolicy?.videoModelCandidate as 'seedance2_5' | 'gen3a_turbo' | 'gen4_turbo') || 'gen4_turbo';
 
     const task = await mockRunwayClient.createImageToVideoTask({
       promptImageUrl: sourceImagePath,

@@ -7,6 +7,7 @@ import { logger } from '../../config/logger.js';
 import { mockAiGenStorage } from './mockAiGenStorage.js';
 import { MockCampaign, MockPropertyProject } from './mockPropertySchema.js';
 import { mockVoiceoverService } from './mockVoiceoverService.js';
+import { mockAudioEngine } from './mockAudioEngine.js';
 
 export interface ComposedAdResult {
   campaignId: string;
@@ -689,6 +690,28 @@ export class MockAdComposer {
       const escapedAss = assPath.replace(/\\/g, '/').replace(':', '\\:');
 
       // Concatenate video, burn animated ASS subtitles, and mix music ducked under voiceover
+      // FIX (Phase A): Mix music ducked under voiceover with duration=longest, -14 LUFS loudnorm, TP <= -1.5 dBTP limiter
+      const filterComplex =
+        `[0:v]ass='${escapedAss}'[vout];` +
+        `[2:a]volume=0.20,afade=t=in:d=1,afade=t=out:st=${Math.max(1, campaign.durationSeconds - 2)}:d=2,aformat=channel_layouts=stereo:sample_rates=48000[music];` +
+        `[1:a]aformat=channel_layouts=stereo:sample_rates=48000,asplit=2[vo][sc];` +
+        `[music][sc]sidechaincompress=threshold=0.03:ratio=7:attack=25:release=350[ducked];` +
+        `[vo][ducked]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[mixed];` +
+        `[mixed]loudnorm=I=-14:LRA=7:TP=-1.5,alimiter=limit=-1.5dB:level=false,aformat=channel_layouts=stereo:sample_rates=48000[aout]`;
+
+      const voDuration = await mockVoiceoverService.probeAudioDuration(voTrackPath);
+      const musicDuration = await mockVoiceoverService.probeAudioDuration(ambientMusicPath);
+
+      logger.info('--- FINAL MIX AUDIO INPUTS AUDIT ---');
+      logger.info({
+        campaignId: campaign.id,
+        targetDuration: campaign.durationSeconds,
+        input0_video_footage: { source: concatListFile, audioStream: 'MUTED (-an / 0 audio channels)', duration: campaign.durationSeconds },
+        input1_narration: { source: path.basename(voTrackPath), duration: voDuration, startSeconds: 0, endSeconds: voDuration, volume: 1.0, mixedTimes: 1 },
+        input2_music_bed: { source: path.basename(ambientMusicPath), duration: musicDuration, startSeconds: 0, endSeconds: campaign.durationSeconds, volume: 0.20, ducking: '-12dB sidechain' },
+        mastering: 'loudnorm I=-14 LRA=7 TP=-1.5, alimiter limit=-1.5dB, 48kHz stereo AAC'
+      }, `Final Audio Mix Plan for ${campaign.id}`);
+
       await runFfmpeg([
         '-y',
         '-f', 'concat',
@@ -696,8 +719,7 @@ export class MockAdComposer {
         '-i', concatListFile,
         '-i', voTrackPath,
         '-i', ambientMusicPath,
-        '-filter_complex',
-        `[0:v]ass='${escapedAss}'[vout];[2:a]volume=0.22,afade=t=in:d=1,afade=t=out:st=${Math.max(1, campaign.durationSeconds - 2)}:d=2[music];[1:a]asplit=2[vo][sc];[music][sc]sidechaincompress=threshold=0.03:ratio=7:attack=25:release=350[ducked];[vo][ducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`,
+        '-filter_complex', filterComplex,
         '-map', '[vout]',
         '-map', '[aout]',
         '-c:v', 'libx264',
@@ -709,6 +731,31 @@ export class MockAdComposer {
         '-t', String(campaign.durationSeconds),
         outputPath,
       ]);
+
+      if (!fs.existsSync(outputPath)) {
+        throw new Error(`Rendering failed: ${outputPath} was not created.`);
+      }
+
+      // Export separate QA audio stems (Phase A requirement)
+      const qaAudioDir = path.join(mockAiGenStorage.getRoot(), 'qa', 'audio');
+      await mockAudioEngine.exportQAAudioStems({
+        campaignId: campaign.id,
+        voTrackPath,
+        musicPath: ambientMusicPath,
+        masterAdPath: outputPath,
+        qaAudioDir,
+      });
+
+      // Verify Audio QA Gates (Phase A requirement: fails render if violated)
+      const audioQa = await mockAudioEngine.verifyAudioQaGates({
+        audioPath: outputPath,
+        expectedVideoDuration: campaign.durationSeconds,
+        campaignId: campaign.id,
+      });
+
+      if (!audioQa.passed) {
+        throw new Error(`Audio QA Gate Failed for ${campaign.id}: ${audioQa.failureReasons.join('; ')}`);
+      }
 
       // 3. Generate high-quality poster frame for UI preview
       await runFfmpeg([
@@ -722,11 +769,7 @@ export class MockAdComposer {
         logger.warn({ err }, 'Could not extract poster frame from ad');
       });
 
-      if (!fs.existsSync(outputPath)) {
-        throw new Error(`Rendering failed: ${outputPath} was not created.`);
-      }
-
-      logger.info({ outputPath, size: fs.statSync(outputPath).size }, 'Composed ad video successfully');
+      logger.info({ outputPath, size: fs.statSync(outputPath).size, audioMetrics: audioQa.metrics }, 'Composed ad video successfully with verified Audio QA compliance');
     } finally {
       // Clean up temporary scene files after concat finishes
       await fsPromises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -985,6 +1028,27 @@ export class MockAdComposer {
       const escapedAss = assPath.replace(/\\/g, '/').replace(':', '\\:');
 
       // Final pilot render: video + ASS subtitles + ducked ambient audio mix
+      const pilotFilterComplex =
+        `[0:v]ass='${escapedAss}'[vout];` +
+        `[2:a]volume=0.20,afade=t=in:d=0.8,afade=t=out:st=${totalPilotDuration - 1.5}:d=1.5,aformat=channel_layouts=stereo:sample_rates=48000[music];` +
+        `[1:a]aformat=channel_layouts=stereo:sample_rates=48000,asplit=2[vo][sc];` +
+        `[music][sc]sidechaincompress=threshold=0.03:ratio=7:attack=25:release=350[ducked];` +
+        `[vo][ducked]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[mixed];` +
+        `[mixed]loudnorm=I=-14:LRA=7:TP=-1.5,alimiter=limit=-1.5dB:level=false,aformat=channel_layouts=stereo:sample_rates=48000[aout]`;
+
+      const voDuration = await mockVoiceoverService.probeAudioDuration(voTrackPath);
+      const musicDuration = await mockVoiceoverService.probeAudioDuration(ambientMusicPath);
+
+      logger.info('--- FINAL MIX AUDIO INPUTS AUDIT ---');
+      logger.info({
+        campaignId: campaign.id,
+        targetDuration: campaign.durationSeconds,
+        input0_video_footage: { source: concatListFile, audioStream: 'MUTED (-an / 0 audio channels)', duration: campaign.durationSeconds },
+        input1_narration: { source: path.basename(voTrackPath), duration: voDuration, startSeconds: 0, endSeconds: voDuration, volume: 1.0, mixedTimes: 1 },
+        input2_music_bed: { source: path.basename(ambientMusicPath), duration: musicDuration, startSeconds: 0, endSeconds: campaign.durationSeconds, volume: 0.20, ducking: '-12dB sidechain' },
+        mastering: 'loudnorm I=-14 LRA=7 TP=-1.5, alimiter limit=-1.5dB, 48kHz stereo AAC'
+      }, `Final Audio Mix Plan for ${campaign.id}`);
+
       await runFfmpeg([
         '-y',
         '-f', 'concat',
@@ -992,8 +1056,7 @@ export class MockAdComposer {
         '-i', concatListFile,
         '-i', voTrackPath,
         '-i', ambientMusicPath,
-        '-filter_complex',
-        `[0:v]ass='${escapedAss}'[vout];[2:a]volume=0.22,afade=t=in:d=0.8,afade=t=out:st=${totalPilotDuration - 1.5}:d=1.5[music];[1:a]asplit=2[vo][sc];[music][sc]sidechaincompress=threshold=0.03:ratio=7:attack=25:release=350[ducked];[vo][ducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`,
+        '-filter_complex', pilotFilterComplex,
         '-map', '[vout]',
         '-map', '[aout]',
         '-c:v', 'libx264',

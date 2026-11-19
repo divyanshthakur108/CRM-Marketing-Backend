@@ -98,8 +98,9 @@ async function main() {
       { forceRefresh: false }
     );
 
+    const effectiveModel = env.GEMINI_ANALYSIS_MODEL === 'gemini-2.5-flash' ? 'gemini-3.8-flash' : (env.GEMINI_ANALYSIS_MODEL || 'gemini-3.8-flash');
     console.log(`    Proxy ready: ${preprocessed.proxyPath} (${preprocessed.normalizedWidth}x${preprocessed.normalizedHeight})`);
-    console.log(`    Sending proxy to Gemini (${env.GEMINI_ANALYSIS_MODEL || 'gemini-3.8-flash'})...`);
+    console.log(`    Sending proxy to Gemini (${effectiveModel})...`);
 
     const t0 = Date.now();
     const analysis: GeminiSceneAnalysis = await mockGeminiVideoDirector.analyzeVideoClip(

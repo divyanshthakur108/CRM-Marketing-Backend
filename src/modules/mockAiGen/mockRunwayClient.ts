@@ -10,7 +10,7 @@ import { mockAiGenStorage } from './mockAiGenStorage.js';
 export interface RunwayTaskOptions {
   promptImageUrl: string;
   sourceImageBuffer?: Buffer;
-  model: 'seedance2_5' | 'gen3a_turbo';
+  model: 'seedance2_5' | 'gen3a_turbo' | 'gen4_turbo';
   promptText: string;
   ratio: '720:1280' | '1280:720' | '768:1280' | '1280:768';
   durationSeconds: number;
@@ -102,8 +102,10 @@ export class MockRunwayClient {
     const startTime = Date.now();
 
     try {
-      // Map candidate model to supported Runway API model
-      const targetModel = options.model === 'seedance2_5' ? 'gen3a_turbo' : (options.model || 'gen3a_turbo');
+      // Map candidate model to supported Runway API model (gen3a_turbo sunsetted on 2026-07-30, use gen4_turbo)
+      const targetModel = options.model === 'seedance2_5' || options.model === 'gen3a_turbo' || !options.model
+        ? 'gen4_turbo'
+        : options.model;
       
       // Map ratio to valid Runway API aspect ratio
       let targetRatio: '768:1280' | '1280:768' = '768:1280';
