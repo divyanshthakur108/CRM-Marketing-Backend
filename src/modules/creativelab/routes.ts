@@ -135,4 +135,40 @@ router.delete(
   })
 );
 
+const resultSchema = z.object({
+  title: z.string().trim().min(1, 'Title is required').max(160),
+  notes: z.string().trim().max(2000).default(''),
+  aiDisclosure: z.string().trim().max(300).default(''),
+  tags: z.string().trim().max(400).default(''),
+  verdict: z.enum(['USE', 'CHECK', 'DONT_USE']).default('CHECK'),
+});
+
+/** Adds a finished reel (MP4) to the project's "Generated results"; no Gemini request */
+router.post(
+  '/projects/:id/results',
+  handleUpload,
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.file) throw AppError.badRequest('No file uploaded (field name: file)');
+    const body = resultSchema.parse(req.body);
+    sendSuccess(
+      res,
+      await creativeLabService.addResult(
+        req.params.id,
+        { buffer: req.file.buffer, filename: req.file.originalname },
+        { ...body, tags: body.tags.split(','), source: 'upload', createdBy: req.user!.userId }
+      ),
+      201
+    );
+  })
+);
+
+/** Removes a result from the page (the video stays in storage) */
+router.delete(
+  '/results/:resultId',
+  asyncHandler(async (req: Request, res: Response) => {
+    await creativeLabService.deleteResult(req.params.resultId);
+    sendSuccess(res, { deleted: true });
+  })
+);
+
 export default router;

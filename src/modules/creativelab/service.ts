@@ -16,8 +16,10 @@ import {
   AnalysisStep,
   CreativeLabAsset,
   CreativeLabProject,
+  CreativeLabResult,
   ICreativeLabAsset,
   ICreativeLabProject,
+  ICreativeLabResult,
 } from './model.js';
 import {
   ProjectBrief,
@@ -97,14 +99,19 @@ export class CreativeLabService {
     return projects.map((p) => ({ ...p, assetCount: byId.get(p._id.toString()) || 0 })) as never;
   }
 
-  public async getProject(projectId: string): Promise<{ project: ICreativeLabProject; assets: ICreativeLabAsset[] }> {
+  public async getProject(
+    projectId: string
+  ): Promise<{ project: ICreativeLabProject; assets: ICreativeLabAsset[]; results: ICreativeLabResult[] }> {
     const project = await this.getProjectDoc(projectId);
     await CreativeLabAsset.updateMany(
       { projectId: project._id, status: { $in: ['QUEUED', 'ANALYZING'] }, updatedAt: { $lt: new Date(Date.now() - STALE_MS) } },
       { $set: { status: 'FAILED', error: 'Interrupted (the server restarted). Press "Analyze again".' } }
     );
-    const assets = await CreativeLabAsset.find({ projectId: project._id }).sort({ createdAt: 1 });
-    return { project, assets };
+    const [assets, results] = await Promise.all([
+      CreativeLabAsset.find({ projectId: project._id }).sort({ createdAt: 1 }),
+      CreativeLabResult.find({ projectId: project._id }).sort({ createdAt: -1 }),
+    ]);
+    return { project, assets, results };
   }
 
   private async getProjectDoc(projectId: string): Promise<ICreativeLabProject> {
@@ -222,8 +229,82 @@ export class CreativeLabService {
       throw AppError.conflict('A file in this project is being analyzed. Wait until it finishes, then delete.');
     }
     await CreativeLabAsset.deleteMany({ projectId: project._id });
+    await CreativeLabResult.deleteMany({ projectId: project._id });
     await project.deleteOne();
     return { deletedFiles: assets.length, filesKeptInStorage: true };
+  }
+
+  // ── Generated results (finished reels) ────────────────────────────────────
+
+  /**
+   * Saves a finished video to storage (Cloudinary when configured) and lists it on the project's
+   * page. Publishing the same file again only updates its title/notes (matched by content hash).
+   */
+  public async addResult(
+    projectId: string,
+    file: { buffer: Buffer; filename: string },
+    meta: {
+      title: string;
+      notes?: string;
+      aiDisclosure?: string;
+      tags?: string[];
+      verdict?: ICreativeLabResult['verdict'];
+      source?: ICreativeLabResult['source'];
+      createdBy?: string;
+    }
+  ): Promise<ICreativeLabResult> {
+    const project = await this.getProjectDoc(projectId);
+    const detection = validateFileSignature(file.buffer, file.filename, 'video/mp4');
+    if (!detection.valid || detection.type !== 'VIDEO') throw AppError.badRequest('Results must be MP4 videos');
+
+    const sha256 = crypto.createHash('sha256').update(file.buffer).digest('hex');
+    const fields = {
+      title: meta.title.trim().slice(0, 160),
+      notes: (meta.notes || '').slice(0, 2000),
+      aiDisclosure: (meta.aiDisclosure || '').slice(0, 300),
+      tags: (meta.tags || []).map((t) => t.trim()).filter(Boolean).slice(0, 12),
+      verdict: meta.verdict || 'CHECK',
+    };
+    const existing = await CreativeLabResult.findOne({ projectId: project._id, sha256 });
+    if (existing) {
+      existing.set(fields);
+      await existing.save();
+      return existing;
+    }
+
+    const key = `creative-lab/results/${crypto.randomUUID()}.mp4`;
+    const stored = await defaultStorage.upload({ buffer: file.buffer, filename: file.filename, mimetype: 'video/mp4' }, 'creative-lab/results', key);
+    const doc = new CreativeLabResult({
+      projectId: project._id,
+      createdBy: meta.createdBy ? new Types.ObjectId(meta.createdBy) : undefined,
+      ...fields,
+      key,
+      url: stored.url,
+      filename: path.basename(file.filename).slice(0, 200),
+      sizeBytes: file.buffer.length,
+      sha256,
+      source: meta.source || 'upload',
+    });
+    try {
+      const localPath = defaultStorage.getAbsolutePath(key);
+      const probe = await probeMedia(localPath);
+      doc.durationSeconds = round2(probe.durationSeconds);
+      doc.width = probe.width;
+      doc.height = probe.height;
+      doc.previewThumb = await this.videoFrame(localPath, Math.min(2, probe.durationSeconds / 2), 360);
+    } catch (err) {
+      logger.warn({ err, key }, 'Creative Lab: could not read result video details');
+    }
+    await doc.save();
+    return doc;
+  }
+
+  /** Removes a result from the page. The video file stays in storage. */
+  public async deleteResult(resultId: string): Promise<void> {
+    if (!Types.ObjectId.isValid(resultId)) throw AppError.notFound('Result not found');
+    const doc = await CreativeLabResult.findById(resultId);
+    if (!doc) throw AppError.notFound('Result not found');
+    await doc.deleteOne();
   }
 
 

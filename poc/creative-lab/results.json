@@ -1,0 +1,38 @@
+{
+  "project": "6b02030565b0e74ccdc079f9",
+  "note": "Reels shown under 'Generated results' on the Creative Lab page. Paths are relative to --dir (default ../poc-output). Leave out reels that are misleading (tower reels) or have a wrong end card (reel E) until they are fixed.",
+  "results": [
+    {
+      "file": "tdi_villa_reel_F_presenter_veo_voice.mp4",
+      "title": "Reel F: Sardar ji presenter + villa tour (Veo voice)",
+      "verdict": "USE",
+      "tags": ["AI presenter", "Punjabi", "lux captions", "46 s"],
+      "aiDisclosure": "Presenter and his voice: AI (Gemini Veo). Twilight shot: AI (Veo). Voiceover: AI (Sarvam TTS). Property shots: actual footage.",
+      "notes": "Preferred version. 10 s AI Punjabi presenter intro, then the real villa and interiors with Punjabi voiceover, AI twilight shot, facts-only end card. Built with poc/creative-lab/build_F.py. Open issue: the presenter voice (Veo) and the narration voice (Sarvam) are different people."
+    },
+    {
+      "file": "tdi_villa_reel_F_presenter_sarvam_voice.mp4",
+      "title": "Reel F: Sardar ji presenter + villa tour (Sarvam voice)",
+      "verdict": "CHECK",
+      "tags": ["AI presenter", "Punjabi", "lux captions", "46 s"],
+      "aiDisclosure": "Presenter: AI (Gemini Veo). All voices: AI (Sarvam TTS). Twilight shot: AI (Veo). Property shots: actual footage.",
+      "notes": "Same as the Veo-voice version, but the intro is voiced by Sarvam so the whole reel has one voice. The presenter's lips don't match the words."
+    },
+    {
+      "file": "tdi_villa_reel_punjabi.mp4",
+      "title": "Villa reel, Punjabi voiceover (all real footage)",
+      "verdict": "USE",
+      "tags": ["Punjabi", "real footage", "37 s"],
+      "aiDisclosure": "Voiceover: AI (Sarvam TTS). Captions and lines written by Gemini from the brief. All visuals: actual footage.",
+      "notes": "Real villa and interior shots only (stabilised, cleaned). Facts only from the project brief. Built with build_villa.sh + build_variant_villa.py."
+    },
+    {
+      "file": "tdi_villa_reel_hindi.mp4",
+      "title": "Villa reel, Hindi voiceover (all real footage)",
+      "verdict": "USE",
+      "tags": ["Hindi", "real footage", "37 s"],
+      "aiDisclosure": "Voiceover: AI (Sarvam TTS). Captions and lines written by Gemini from the brief. All visuals: actual footage.",
+      "notes": "Same as the Punjabi villa reel, Hindi voice."
+    }
+  ]
+}

@@ -186,6 +186,8 @@ Rules every reel follows:
 
 ## 4. Outputs (in `poc-output/`)
 
+**Shared with the team:** the ✅ reels below (F Veo voice, F Sarvam voice, villa Punjabi, villa Hindi) are uploaded to Cloudinary and listed on the Creative Lab page under **4. Generated results** for the test project, so every admin sees them (records are in the lab database, collection `creativelabresults`). To add or change one, edit `poc/creative-lab/results.json` and run `npm run creative-lab:publish` (add `-- --dry-run` to check first). Running it again only updates titles and notes. API: `POST /admin/creative-lab/projects/:id/results` (MP4 upload with title, notes, aiDisclosure, tags, verdict) and `DELETE /admin/creative-lab/results/:id` (removes the record, keeps the file).
+
 | File | What | Use? |
 |---|---|---|
 | `tdi_villa_reel_hindi.mp4`, `tdi_villa_reel_punjabi.mp4` | 37 s, all real villa + interiors | ✅ |

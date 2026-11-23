@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "seed:admin": "tsx src/scripts/seedAdmin.ts",
     "worker": "tsx src/worker.ts",
-    "e2e:server": "tsx src/scripts/e2eServer.ts"
+    "e2e:server": "tsx src/scripts/e2eServer.ts",
+    "creative-lab:publish": "tsx src/scripts/publishCreativeLabResults.ts"
   },
   "keywords": [
     "real-estate",

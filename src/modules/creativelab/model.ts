@@ -115,3 +115,60 @@ assetSchema.index({ projectId: 1, createdAt: 1 });
 
 export const CreativeLabProject = labDb.model<ICreativeLabProject>('CreativeLabProject', projectSchema);
 export const CreativeLabAsset = labDb.model<ICreativeLabAsset>('CreativeLabAsset', assetSchema);
+
+/**
+ * A finished video made for a test project (e.g. a reel built by the POC scripts in
+ * poc/creative-lab/). The file lives in storage (Cloudinary when configured); this record makes it
+ * show up on the project's page for every admin, so results made on one machine are visible to all.
+ */
+export interface ICreativeLabResult extends Document {
+  projectId: Types.ObjectId;
+  createdBy?: Types.ObjectId;
+  title: string;
+  /** How it was made and what to check (shown under the player) */
+  notes: string;
+  /** Which parts are AI-generated (shown as a label, required for honesty) */
+  aiDisclosure: string;
+  /** Short labels, e.g. "Punjabi voice", "lux captions" */
+  tags: string[];
+  verdict: 'USE' | 'CHECK' | 'DONT_USE';
+  key: string;
+  url: string;
+  filename: string;
+  sizeBytes: number;
+  sha256: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  previewThumb?: string;
+  /** "poc-script" (published from a developer machine) or "upload" (added on the page) */
+  source: 'poc-script' | 'upload';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const resultSchema = new Schema<ICreativeLabResult>(
+  {
+    projectId: { type: Schema.Types.ObjectId, ref: 'CreativeLabProject', required: true, index: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    title: { type: String, required: true, trim: true, maxlength: 160 },
+    notes: { type: String, default: '', maxlength: 2000 },
+    aiDisclosure: { type: String, default: '', maxlength: 300 },
+    tags: { type: [String], default: [] },
+    verdict: { type: String, enum: ['USE', 'CHECK', 'DONT_USE'], default: 'CHECK' },
+    key: { type: String, required: true },
+    url: { type: String, required: true },
+    filename: { type: String, required: true },
+    sizeBytes: { type: Number, required: true },
+    sha256: { type: String, required: true },
+    width: Number,
+    height: Number,
+    durationSeconds: Number,
+    previewThumb: String,
+    source: { type: String, enum: ['poc-script', 'upload'], default: 'upload' },
+  },
+  { timestamps: true }
+);
+resultSchema.index({ projectId: 1, sha256: 1 }, { unique: true });
+
+export const CreativeLabResult = labDb.model<ICreativeLabResult>('CreativeLabResult', resultSchema);
