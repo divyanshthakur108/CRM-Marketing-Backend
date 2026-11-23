@@ -1,0 +1,103 @@
+{
+ "shots": [
+  {
+   "id": "s1",
+   "caption": "Wellington Heights 2 Mohali",
+   "key": "Mohali",
+   "voice": "टीडीआई वेलिंगटन हाइट्स २ मोहाली में आपका स्वागत है।",
+   "voiceSeconds": 3.07,
+   "pace": 1.0,
+   "voice_f_sec": 3.58,
+   "voice_pa": "ਟੀਡੀਆਈ ਵੈਲਿੰਗਟਨ ਹਾਈਟਸ ੨ ਮੋਹਾਲੀ ਵਿੱਚ ਤੁਹਾਡਾ ਸਵਾਗਤ ਹੈ।",
+   "voice_pa_sec": 3.07
+  },
+  {
+   "id": "s3",
+   "caption": "Untouched Ready Flat",
+   "key": "Ready",
+   "voice": "यह एकदम नया अनटच्ड फ्लैट है।",
+   "voiceSeconds": 1.73,
+   "pace": 1.06,
+   "voice_f_sec": 1.96,
+   "voice_pa": "ਇਹ ਬਿਲਕੁਲ ਨਵਾਂ ਅਨਟੱਚਡ ਫਲੈਟ ਹੈ।",
+   "voice_pa_sec": 2.13
+  },
+  {
+   "id": "s4",
+   "caption": "Newly Made HDHMR Kitchen",
+   "key": "HDHMR",
+   "voice": "किचन HDHMR का नया बना है।",
+   "voiceSeconds": 2.22,
+   "pace": 1.0,
+   "voice_f_sec": 2.56,
+   "voice_pa": "ਕਿਚਨ HDHMR ਦਾ ਨਵਾਂ ਬਣਿਆ ਹੈ।",
+   "voice_pa_sec": 2.82
+  },
+  {
+   "id": "s5",
+   "caption": "Lower Floor Corner Flat",
+   "key": "Lower",
+   "voice": "यह लोअर फ्लोर का शानदार फ्लैट है।",
+   "voiceSeconds": 1.88,
+   "pace": 1.0,
+   "voice_f_sec": 2.22,
+   "voice_pa": "ਇਹ ਲੋਅਰ ਫਲੋਰ ਦਾ ਸ਼ਾਨਦਾਰ ਫਲੈਟ ਹੈ।",
+   "voice_pa_sec": 2.56
+  },
+  {
+   "id": "s6b",
+   "caption": "Modern Designer Bathroom",
+   "key": "Bathroom",
+   "voice": "बाथरूम में भी मॉडर्न फिनिशिंग है।",
+   "voiceSeconds": 1.62,
+   "pace": 1.0,
+   "voice_f_sec": 2.05,
+   "voice_pa": "ਬਾਥਰੂਮ ਵਿੱਚ ਵੀ ਮਾਡਰਨ ਫਿਨਿਸ਼ਿੰਗ ਹੈ।",
+   "voice_pa_sec": 2.56
+  },
+  {
+   "id": "s6",
+   "caption": "Brand New Cupboards",
+   "key": "Cupboards",
+   "voice": "सारे कपबोर्ड्स भी नए बने हैं।",
+   "voiceSeconds": 1.62,
+   "pace": 1.0,
+   "voice_f_sec": 1.79,
+   "voice_pa": "ਸਾਰੇ ਕਪਬੋਰਡਸ ਵੀ ਨਵੇਂ ਬਣੇ ਨੇ।",
+   "voice_pa_sec": 2.05
+  },
+  {
+   "id": "s7",
+   "caption": "Sun Facing With Balconies",
+   "key": "Balconies",
+   "voice": "सन-फेसिंग फ्लैट में ४ बालकनी भी हैं।",
+   "voiceSeconds": 2.22,
+   "pace": 1.0,
+   "voice_f_sec": 2.65,
+   "voice_pa": "ਸਨ-ਫੇਸਿੰਗ ਫਲੈਟ ਵਿੱਚ ੪ ਬਾਲਕੋਨੀ ਵੀ ਨੇ।",
+   "voice_pa_sec": 2.9
+  },
+  {
+   "id": "s9",
+   "caption": "Side Park, Golden Evenings",
+   "key": "Park",
+   "voice": "साइड पार्क के साथ, हर शाम सुनहरी।",
+   "voiceSeconds": 2.47,
+   "pace": 1.0,
+   "voice_f_sec": 2.47,
+   "voice_pa": "ਸਾਈਡ ਪਾਰਕ ਦੇ ਨਾਲ, ਹਰ ਸ਼ਾਮ ਸੁਨਹਿਰੀ।",
+   "voice_pa_sec": 2.99
+  },
+  {
+   "id": "end",
+   "caption": "Book Now Sector 117",
+   "key": "117",
+   "voice": "सेक्टर ११७ मोहाली में १.३५ करोड़, तुरंत संपर्क करें।",
+   "voiceSeconds": 3.73,
+   "pace": 1.07,
+   "voice_f_sec": 4.04,
+   "voice_pa": "ਸੈਕਟਰ ੧੧੭ ਮੋਹਾਲੀ ਵਿੱਚ ੧.੩੫ ਕਰੋੜ, ਤੁਰੰਤ ਸੰਪਰਕ ਕਰੋ।",
+   "voice_pa_sec": 4.27
+  }
+ ]
+}

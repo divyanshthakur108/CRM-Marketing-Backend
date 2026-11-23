@@ -30,6 +30,7 @@ import { whatsAppRouter } from './modules/whatsapp/routes.js';
 import { appointmentRouter } from './modules/appointments/routes.js';
 import adminRouter from './modules/admin/routes.js';
 import videoLabRouter from './modules/videolab/routes.js';
+import creativeLabRouter from './modules/creativelab/routes.js';
 import onboardingRouter from './modules/onboarding/routes.js';
 import notificationsRouter from './modules/notifications/routes.js';
 import path from 'path';
@@ -126,6 +127,7 @@ export const createApp = (): Express => {
   app.use('/api/v1/conversations', whatsAppRouter);
   app.use('/api/v1/appointments', appointmentRouter);
   app.use('/api/v1/admin/video-lab', videoLabRouter);
+  app.use('/api/v1/admin/creative-lab', creativeLabRouter);
   app.use('/api/v1/admin/organizations', adminRouter);
   app.use('/api/v1/onboarding', onboardingRouter);
   app.use('/api/v1/notifications', notificationsRouter);

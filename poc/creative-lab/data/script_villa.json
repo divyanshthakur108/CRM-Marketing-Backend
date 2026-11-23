@@ -1,0 +1,103 @@
+{
+ "shots": [
+  {
+   "id": "v1",
+   "caption": "Classical Villa-Style Floors",
+   "key": "Villa-Style",
+   "voice": "मोहाली सेक्टर 117 में क्लासिक विला-स्टाइल फ्लोर।",
+   "voice_pa": "ਮੋਹਾਲੀ ਸੈਕਟਰ 117 ਵਿੱਚ ਕਲਾਸਿਕ ਵਿਲਾ-ਸਟਾਈਲ ਫਲੋਰ।",
+   "voice_villa_hi_sec": 3.33,
+   "voice_villa_pa_sec": 3.24
+  },
+  {
+   "id": "v2",
+   "caption": "Sun Facing Corner Property",
+   "key": "Corner",
+   "voice": "यह सन-फेसिंग और कॉर्नर प्रॉपर्टी है।",
+   "voice_pa": "ਇਹ ਸਨ-ਫੇਸਿੰਗ ਤੇ ਕਾਰਨਰ ਪ੍ਰੋਪਰਟੀ ਹੈ।",
+   "voice_villa_hi_sec": 1.96,
+   "voice_villa_pa_sec": 2.9
+  },
+  {
+   "id": "v3",
+   "caption": "Total 4 Balconies",
+   "key": "4",
+   "voice": "इसमें आपको कुल 4 बालकनी मिलती हैं।",
+   "voice_pa": "ਇਹਦੇ ਵਿੱਚ ਤੁਹਾਨੂੰ ਕੁੱਲ 4 ਬਾਲਕੋਨੀਆਂ ਮਿਲਦੀਆਂ ਨੇ।",
+   "voice_villa_hi_sec": 2.05,
+   "voice_villa_pa_sec": 3.07
+  },
+  {
+   "id": "v4",
+   "caption": "Ready To Move Lower Floor",
+   "key": "Ready",
+   "voice": "बिल्कुल रेडी टू मूव फ्लैट है।",
+   "voice_pa": "ਬਿਲਕੁਲ ਰੈਡੀ ਟੂ ਮੂਵ ਫਲੈਟ ਹੈ।",
+   "voice_villa_hi_sec": 1.62,
+   "voice_villa_pa_sec": 1.79
+  },
+  {
+   "id": "s3",
+   "caption": "Brand New Untouched Flat",
+   "key": "Untouched",
+   "voice": "यह बिल्कुल अनटच्ड फ्लैट है।",
+   "voice_pa": "ਇਹ ਬਿਲਕੁਲ ਅਨਟਚਡ ਫਲੈਟ ਹੈ।",
+   "voice_villa_hi_sec": 1.54,
+   "voice_villa_pa_sec": 1.71
+  },
+  {
+   "id": "s4",
+   "caption": "HDHMR Modular Kitchen Work",
+   "key": "Kitchen",
+   "voice": "नया किचन HDHMR वर्क के साथ।",
+   "voice_pa": "ਨਵਾਂ ਕਿਚਨ HDHMR ਵਰਕ ਦੇ ਨਾਲ।",
+   "voice_villa_hi_sec": 2.3,
+   "voice_villa_pa_sec": 2.13
+  },
+  {
+   "id": "s5",
+   "caption": "Fresh Paint New Interiors",
+   "key": "Interiors",
+   "voice": "नया पेंट और सुंदर इंटीरियर।",
+   "voice_pa": "ਨਵਾਂ ਪੇਂਟ ਤੇ ਸੋਹਣਾ ਇੰਟੀਰੀਅਰ।",
+   "voice_villa_hi_sec": 1.96,
+   "voice_villa_pa_sec": 1.96
+  },
+  {
+   "id": "s6b",
+   "caption": "Modern Bathroom With Fittings",
+   "key": "Bathroom",
+   "voice": "मॉडर्न फिटिंग्स के साथ बाथरूम।",
+   "voice_pa": "ਮਾਡਰਨ ਫਿਟਿੰਗਸ ਨਾਲ ਬਾਥਰੂਮ।",
+   "voice_villa_hi_sec": 1.62,
+   "voice_villa_pa_sec": 1.62
+  },
+  {
+   "id": "s6",
+   "caption": "Newly Made HDHMR Cupboards",
+   "key": "Cupboards",
+   "voice": "सभी कपबोर्ड्स HDHMR से बने हैं।",
+   "voice_pa": "ਸਾਰੇ ਕਪਬੋਰਡਸ HDHMR ਦੇ ਬਣੇ ਨੇ।",
+   "voice_villa_hi_sec": 2.56,
+   "voice_villa_pa_sec": 2.47
+  },
+  {
+   "id": "s7",
+   "caption": "Beautiful Terrace Open View",
+   "key": "Terrace",
+   "voice": "टेरेस से खुला और सुंदर व्यू।",
+   "voice_pa": "ਟੈਰੇਸ ਤੋਂ ਖੁੱਲ੍ਹਾ ਤੇ ਸੋਹਣਾ ਵੀਊ।",
+   "voice_villa_hi_sec": 1.88,
+   "voice_villa_pa_sec": 2.13
+  },
+  {
+   "id": "end",
+   "caption": "Sector 117 Mohali For 1.35 Cr",
+   "key": "Mohali",
+   "voice": "TDI वेलिंगटन हाइट्स 2, 1.35 करोड़ में कॉल करें।",
+   "voice_pa": "TDI ਵੈਲਿੰਗਟਨ ਹਾਈਟਸ 2, 1.35 ਕਰੋੜ ਵਿੱਚ, ਕਾਲ ਕਰੋ।",
+   "voice_villa_hi_sec": 3.67,
+   "voice_villa_pa_sec": 4.27
+  }
+ ]
+}

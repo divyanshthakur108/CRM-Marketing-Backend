@@ -17,6 +17,8 @@ realestate/
 | `VIDEO_LAB.md` | What the Video Lab does today: captions from speech, clip understanding, smart cut, ffmpeg render |
 | `VIDEO_PIPELINE_PLAN.md` | Next steps for video, step by step, with tech/APIs and flow charts |
 | `AI_GENERATION_RESEARCH.md` | Product flow, AI providers, prices, open questions |
+| `IDEA_LIBRARY.md` | The content ideas (reels and posts) the planner picks from, what each needs and how it's made |
+| `CREATIVE_LAB_POC.md` | Creative Lab POC: what was built, AI tools tried, reels made, open problems |
 
 ---
 
