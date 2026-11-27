@@ -539,3 +539,190 @@ export function cleanVideoKnowledge(
     searchText: str(r.searchText, 2500),
   };
 }
+
+// ── Nearby places + map card ────────────────────────────────────────────────
+
+export const DIRECTIONS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
+export type Direction = (typeof DIRECTIONS)[number];
+const DIRECTION_WORDS: Record<Direction, string> = {
+  N: 'north (straight up)', NE: 'north-east (up-right)', E: 'east (right)', SE: 'south-east (down-right)',
+  S: 'south (straight down)', SW: 'south-west (down-left)', W: 'west (left)', NW: 'north-west (up-left)',
+};
+
+export type MapStyle = 'flat' | '3d';
+
+export interface NearbyPlace {
+  name: string;
+  /** Which way the place is from the building (north is up on the card) */
+  direction?: Direction;
+  time?: { value: number; unit: 'min' | 'hr' };
+  distance?: { value: number; unit: 'km' | 'm' };
+}
+
+export const MAX_PLACES = 8;
+
+const num = (v: unknown): number | undefined => {
+  const n = typeof v === 'string' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 && n < 100000 ? Math.round(n * 100) / 100 : undefined;
+};
+
+/** Validates the rows typed on the page. Throws a readable message for the first bad row. */
+export function cleanPlaces(raw: unknown): NearbyPlace[] {
+  if (!Array.isArray(raw)) throw new Error('Places must be a list');
+  if (raw.length > MAX_PLACES) throw new Error(`Up to ${MAX_PLACES} places`);
+  return raw.map((r, i) => {
+    const row = (r || {}) as Record<string, any>;
+    const name = String(row.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!name) throw new Error(`Row ${i + 1}: place name is required`);
+    const tv = num(row.time?.value);
+    const dv = num(row.distance?.value);
+    if (tv === undefined && dv === undefined) throw new Error(`Row ${i + 1} (${name}): add a time or a distance`);
+    const place: NearbyPlace = { name };
+    if (tv !== undefined) place.time = { value: tv, unit: row.time?.unit === 'hr' ? 'hr' : 'min' };
+    if (dv !== undefined) place.distance = { value: dv, unit: row.distance?.unit === 'm' ? 'm' : 'km' };
+    if ((DIRECTIONS as readonly string[]).includes(row.direction)) place.direction = row.direction as Direction;
+    return place;
+  });
+}
+
+/** "15 min · 12 km" (exactly what was typed, nothing rounded or converted) */
+export function formatPlaceChip(p: NearbyPlace): string {
+  const parts: string[] = [];
+  if (p.time) parts.push(`${p.time.value} ${p.time.unit === 'hr' ? (p.time.value === 1 ? 'hr' : 'hrs') : 'min'}`);
+  if (p.distance) parts.push(`${p.distance.value} ${p.distance.unit}`);
+  return parts.join(' · ');
+}
+
+const MAP_STYLES_3D = [
+  '3D isometric miniature city seen from above at a 45° angle: soft clay-render look, low white buildings, green parks, roads raised slightly, the project as a taller glowing tower with a big 3D gold pin above it, labels floating on white rounded 3D tags with soft shadows. Warm golden-hour light.',
+  '3D tilted map like a premium navigation app: perspective view, extruded light-grey blocks, glowing gold route lines from the project to each place, a 3D pin with a light beam over the project, frosted-glass floating label cards. Dusk sky gradient at the top.',
+  '3D tabletop architectural model on a wooden base: matte white massing blocks, tiny trees, the project highlighted in gold with a pin, thin gold threads to each place ending in small standing signboards with the labels. Soft studio lighting.',
+  '3D low-poly map island floating on a soft beige background: roads in white, greenery in muted green, the project tower in gold with a glowing pin, labels on 3D pill-shaped tags with gentle shadows. Clean, modern and premium.',
+];
+
+const MAP_STYLES = [
+  'Warm beige and muted gold map, thin dark-grey roads, gold project pin, white rounded label chips with dark text. Calm, premium real-estate brochure look.',
+  'Deep navy map with soft glowing roads, gold project pin with a light glow, cream label chips. Elegant night look.',
+  'Clean off-white minimal map with light-grey roads and a soft green park area, brand-pink project pin, white chips with a thin border. Modern and airy.',
+  'Soft sand-coloured map with faint terrain texture, champagne-gold pin and route lines, charcoal labels on frosted-glass chips. Luxury look.',
+];
+
+const SCENES_3D = [
+  '3D isometric miniature city seen from above at a 45 degree angle, soft clay render, low white buildings, green parks, slightly raised roads, one taller glowing golden tower exactly in the centre, warm golden hour light, plain beige background',
+  '3D tilted city model at dusk, extruded light grey blocks, glowing gold road lines, one taller tower with a soft light beam exactly in the centre, deep blue to peach sky gradient background',
+  '3D architectural tabletop model on a light wooden base, matte white massing blocks, tiny trees, one taller gold building exactly in the centre, soft studio lighting, plain cream background',
+  '3D low poly city island floating on a soft sand coloured background, white roads, muted green parks, one taller gold tower exactly in the centre, gentle shadows, clean modern look',
+];
+const SCENES_FLAT = [
+  'top-down minimal city map illustration, warm beige land, thin dark grey roads, soft green parks, a small river, flat vector style, plenty of empty space',
+  'top-down night city map illustration, deep navy background, softly glowing roads, faint blocks, flat vector style, elegant',
+  'top-down clean off-white city map illustration, light grey roads, soft green park areas, flat minimal vector style',
+  'top-down sand coloured city map illustration with faint terrain texture, champagne gold roads, flat premium vector style',
+];
+
+/** Background-only prompt for the free generator (all text, pins and logo are drawn by us on top). */
+export function buildMapScenePrompt(style: MapStyle = 'flat', variant = 0): string {
+  const list = style === '3d' ? SCENES_3D : SCENES_FLAT;
+  return `${list[Math.abs(Math.trunc(variant)) % list.length]}, premium real estate marketing style, high detail, no text, no letters, no numbers, no labels, no signs, no logos, no watermark`;
+}
+
+/**
+ * Prompt for an AI-made map card. The places, times and distances must appear exactly as typed;
+ * the image is not to scale and must not add anything else. `variant` changes the look (Regenerate).
+ */
+export function buildMapCardPrompt(params: {
+  projectName: string;
+  locality?: string | null;
+  places: NearbyPlace[];
+  hasLogo: boolean;
+  variant?: number;
+  style?: MapStyle;
+}): string {
+  const styles = params.style === '3d' ? MAP_STYLES_3D : MAP_STYLES;
+  const v = Math.abs(Math.trunc(params.variant ?? 0)) % styles.length;
+  const withDir = params.places.some((p) => p.direction);
+  const lines = params.places
+    .map((p, i) => `${i + 1}. "${p.name}" with the chip "${formatPlaceChip(p)}"${p.direction ? `, placed to the ${DIRECTION_WORDS[p.direction]} of the project` : ''}`)
+    .join('\n');
+  return `Create a portrait 9:16 ${params.style === '3d' ? '3D ' : ''}location map card for a real-estate social media reel.
+
+Centre: a map pin for the project "${params.projectName}"${params.locality ? ` with the small caption "${params.locality}"` : ''}.
+Around the pin, connected by thin lines or short road paths, show ONLY these nearby places, each as a label with its chip:
+${lines}
+
+Rules:
+- Spell every place name and every number EXACTLY as written above. Do not translate, round or convert them.
+- Do not add any other place, road name, number, distance or text.
+- It is a schematic, not a real map: add a small "Not to scale" note in a bottom corner.
+${withDir ? '- North is up. Put each place in the direction given above, relative to the project pin, and add a small north arrow. Places without a direction can go anywhere that keeps the layout tidy.' : '- Arrange the places neatly around the pin (directions are not known, so do not add a compass).'}
+- Keep all text large and readable on a phone; leave the top 12% and bottom 18% calm (captions go there).
+${params.hasLogo ? '- Place the attached logo small at the bottom centre, unchanged (same shape, colours and letters).' : '- No logo, no brand names other than the project name.'}
+Style: ${styles[v]}`;
+}
+
+// ── Clean-up: fix plan per file ─────────────────────────────────────────────
+
+export type Orientation = 'ok' | 'upside_down' | 'turn_left' | 'turn_right';
+
+export interface FixPlan {
+  /** Whole picture is rotated: upside down, or needs a quarter turn (left = counter-clockwise) */
+  orientation: Orientation;
+  /** Degrees to rotate CLOCKWISE so verticals / horizon become straight (negative = counter-clockwise) */
+  tiltDegrees: number;
+  /** Vertical lines lean together because the camera points down (lines meet below) or up (lines meet above) */
+  keystone: 'none' | 'converge_down' | 'converge_up';
+  keystoneAmount: 'slight' | 'strong';
+  exposure: 'ok' | 'dark' | 'bright';
+  colourCast: 'none' | 'warm' | 'cool' | 'green' | 'magenta';
+  noise: 'low' | 'medium' | 'high';
+  blurry: boolean;
+  /** Temporary clutter an AI edit could remove later (never fixed automatically) */
+  clutter: Array<{ what: string; where: string }>;
+  notes: string;
+}
+
+export function buildFixPlanPrompt(kind: 'image' | 'video', knownIssues: string[] = []): string {
+  return `You check real-estate ${kind === 'image' ? 'photos' : 'video frames (3 frames from the same clip)'} before they are cleaned up for marketing.
+Measure what a photo editor would fix. Do NOT suggest changing the property itself.
+First decide the orientation. Then judge tilt and vertical lines AS IF the picture were already turned the right way up.
+${knownIssues.length ? `An earlier check flagged: ${knownIssues.join(', ')}.` : ''}
+
+Return JSON only:
+{
+ "orientation": "ok" | "upside_down" | "turn_left" | "turn_right". upside_down = sky or ceiling at the bottom, floor or ground at the top. turn_left / turn_right = the picture must be turned 90° counter-clockwise / clockwise to be upright,
+ "tiltDegrees": small leftover tilt AFTER fixing orientation: number between -10 and 10. How many degrees the image must be rotated CLOCKWISE so that vertical edges of walls, doors and buildings become truly vertical (negative = rotate counter-clockwise). 0 if already straight. Be precise; small values like 1.5 are fine,
+ "keystone": "none" | "converge_down" | "converge_up". converge_down = vertical lines get closer together towards the bottom (camera pointing down); converge_up = they get closer towards the top (camera pointing up),
+ "keystoneAmount": "slight" | "strong",
+ "exposure": "ok" | "dark" | "bright",
+ "colourCast": "none" | "warm" | "cool" | "green" | "magenta",
+ "noise": "low" | "medium" | "high" (grain or WhatsApp compression blocks),
+ "blurry": true | false,
+ "clutter": [{"what": "e.g. plastic bags", "where": "e.g. bottom left"}] only temporary things (bags, tools, wires, buckets, debris); [] if none,
+ "notes": "one short sentence"
+}`;
+}
+
+const pick = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
+  (allowed as readonly string[]).includes(String(v)) ? (v as T) : fallback;
+
+export function cleanFixPlan(raw: unknown): FixPlan {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const tilt = Number(r.tiltDegrees);
+  return {
+    orientation: pick(r.orientation, ['ok', 'upside_down', 'turn_left', 'turn_right'] as const, 'ok'),
+    tiltDegrees: Number.isFinite(tilt) ? Math.max(-10, Math.min(10, Math.round(tilt * 10) / 10)) : 0,
+    keystone: pick(r.keystone, ['none', 'converge_down', 'converge_up'] as const, 'none'),
+    keystoneAmount: pick(r.keystoneAmount, ['slight', 'strong'] as const, 'slight'),
+    exposure: pick(r.exposure, ['ok', 'dark', 'bright'] as const, 'ok'),
+    colourCast: pick(r.colourCast, ['none', 'warm', 'cool', 'green', 'magenta'] as const, 'none'),
+    noise: pick(r.noise, ['low', 'medium', 'high'] as const, 'low'),
+    blurry: r.blurry === true,
+    clutter: Array.isArray(r.clutter)
+      ? r.clutter
+          .map((c) => ({ what: String((c as any)?.what ?? '').slice(0, 60), where: String((c as any)?.where ?? '').slice(0, 60) }))
+          .filter((c) => c.what)
+          .slice(0, 6)
+      : [],
+    notes: String(r.notes ?? '').slice(0, 200),
+  };
+}

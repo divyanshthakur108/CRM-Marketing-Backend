@@ -70,6 +70,9 @@ const envSchema = z.object({
   CLOUDINARY_API_KEY: z.string().default(''),
   CLOUDINARY_API_SECRET: z.string().default(''),
   CLOUDINARY_FOLDER: z.string().default('realcrm'),
+  CLOUDFLARE_ACCOUNT_ID: z.string().default(''),
+  CLOUDFLARE_API_TOKEN: z.string().default(''),
+  CLOUDFLARE_IMAGE_MODEL: z.string().default('@cf/black-forest-labs/flux-1-schnell'),
 });
 
 const parseEnv = () => {
@@ -123,6 +126,9 @@ const parseEnv = () => {
     CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY || '',
     CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET || '',
     CLOUDINARY_FOLDER: process.env.CLOUDINARY_FOLDER || 'realcrm',
+    CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || '',
+    CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN || '',
+    CLOUDFLARE_IMAGE_MODEL: process.env.CLOUDFLARE_IMAGE_MODEL || '@cf/black-forest-labs/flux-1-schnell',
   });
 
   if (!result.success) {

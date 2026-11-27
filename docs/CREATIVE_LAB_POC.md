@@ -1,14 +1,38 @@
 # Creative Lab POC: what we built and learned
 
-Status as of 2026-11-23 (sections 8–9: step-by-step process and API plan; section 10: next steps). Test project: **TDI Wellington Heights 2** (Sector 117, Mohali, ₹1.35 Cr, ready to move).
+> New here? Read [`CREATIVE_LAB_HANDOVER.md`](CREATIVE_LAB_HANDOVER.md) first (one-page overview, setup and plan). This file is the detailed history.
+
+Status as of 2026-11-26 (sections 8–9: step-by-step process and API plan; section 10: progress and next steps). Test project: **TDI Wellington Heights 2** (Sector 117, Mohali, ₹1.35 Cr, ready to move).
 
 **Goal:** RealCRM makes real-estate marketing content from what a builder uploads. The target is 4–5 reels and 6–7 posts per project per month, made as cheaply as possible.
+
+> **Reading order for a new engineer or AI assistant**
+> 1. This file: "New developer setup" below, the box after it and section 10 (progress + plan).
+> 2. [`REFERENCE_REELS.md`](REFERENCE_REELS.md): 5 reference reels (GDPL, Mohali) that define the finished look we want, with shot-by-shot notes, caption animations and a combined style guide.
+> 3. [`IDEA_LIBRARY.md`](IDEA_LIBRARY.md) for reel ideas; [`../poc/creative-lab/README.md`](../poc/creative-lab/README.md) for the scripts.
+> 4. Code: backend `src/modules/creativelab/`, frontend `src/pages/AdminCreativeLabPage.tsx`. Branch `feature/creative-lab-poc-lakshay` in both repos.
+
+## New developer setup (Creative Lab)
+
+Things that are **not in git** and must be set up on each machine. The Creative Lab page shows a **"Setup" checklist** (top of the left column, from `GET /admin/creative-lab/setup`) that turns amber and prints the fix command when something is missing.
+
+| # | What | How | Needed for | If missing |
+|---|---|---|---|---|
+| 1 | Both repos side by side | `realestate/CRM-Marketing-Backend` and `realestate/CRM-Marketing-Frontend`, branch `feature/creative-lab-poc-lakshay` | everything | — |
+| 2 | Backend `.env` | copy `.env.example`; ask the team for the shared values: `MONGODB_URI` (shared Atlas cluster, so everyone sees the same test projects), `CLOUDINARY_*` (shared files), `GEMINI_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN`. `CREATIVE_LAB_DB` defaults to `realcrm_creative_lab`. **Never commit `.env`** | everything | local DB = you won't see the team's projects/results |
+| 3 | ffmpeg with vidstab + libass | macOS: `brew install ffmpeg-full`, then `FFMPEG_PATH=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` in `.env`. (Or `MEDIA_TOOLS=docker` for the media-tools container, but Real-ESRGAN won't run inside it) | stabilise, deflicker, captions, all video | video features fail |
+| 4 | **Real-ESRGAN** AI upscaler | `cd CRM-Marketing-Backend && npm run setup:realesrgan` → downloads the official release (v0.2.5.0, ~50 MB, macOS / Linux / Windows) into `realestate/tools/realesrgan/` (outside git). Other folder: set `REALESRGAN_PATH`. Needs a Vulkan-capable GPU (Apple Silicon is fine) | clean-up sharpness | clean-up still works, but only enlarges (not sharper) |
+| 5 | Gemini free limits | free tier ≈ 20 requests/day per model; image generation = 0 without billing | knowledge cards, clean-up AI check, "Gemini (paid)" map card | clean-up falls back to measured fixes; map card: use "Generate (free)" |
+| 6 | Run | backend: `PORT=5050 npm run dev` (port 5000 is taken by macOS AirPlay); frontend: `API_PROXY_TARGET=http://127.0.0.1:5050 npm run dev` | — | a 403 at login means the frontend is talking to AirPlay on 5000 |
+| 7 | Open | http://localhost:5173/admin/creative-lab, signed in as the platform admin (`ADMIN_EMAIL` / `ADMIN_PASSWORD`, seed with `npm run seed:admin`) | — | — |
+
+Where the work lives: code in the two repos; uploaded files, cleaned files, map cards and finished reels in **Cloudinary**; records in the **shared MongoDB** (`realcrm_creative_lab`). So anything one developer makes on the page is visible to all, as long as they use the shared `.env` values. The hand-made POC reels and scripts' outputs stay in `realestate/poc-output/` (not in git; the ones worth sharing were published to the page with `npm run creative-lab:publish`).
 
 > **Read this first: how the POC was actually run**
 >
 > | Part | Runs in the product? | How it was done |
 > |---|---|---|
-> | Creative Lab page: project info, upload, Gemini knowledge cards | ✅ Yes, real backend + frontend code (branch `feature/creative-lab-poc`, not committed) | Gemini API from the backend |
+> | Creative Lab page: project info, upload, Gemini knowledge cards | ✅ Yes, real backend + frontend code (branch `feature/creative-lab-poc-lakshay`, pushed) | Gemini API from the backend |
 > | Reel building: shot clean-up, captions, Sarvam voice, render | ❌ No, local scripts in `realestate/poc-output/` | Run by hand from the terminal (Python + ffmpeg); Gemini and Sarvam called by API |
 > | **AI shots** (twilight, drone, presenter image, presenter video) | ❌ No | **Made on the websites**, not by API: **Claude Code drove the user's own Chrome through the Claude in Chrome extension** on the Gemini web app (Nano Banana image edit, Veo "Create video"), Kling and Hailuo. The user signed in to each site; Claude uploaded the frame, set portrait, typed the prompt, waited, checked and downloaded the result; the user moved the files from `~/Downloads` into `poc-output/clips/` |
 >
@@ -28,6 +52,11 @@ Status as of 2026-11-23 (sections 8–9: step-by-step process and API plan; sect
 | AI shots: twilight / day→dusk, drone | ✅ Working (manual, via websites) |
 | AI Punjabi presenter ("Sardar ji") speaking Punjabi | ✅ 1 clip done; 2 more blocked by Veo daily limit |
 | Same presenter voice for the whole reel | ⏳ Pending (more Veo clips, or voice conversion) |
+| Finished reels shared with the team (Cloudinary + "Generated results" on the page) | ✅ 4 reels (see section 4) |
+| Reference study: what "neat and clean" means | ✅ 5 reference reels studied, see [`REFERENCE_REELS.md`](REFERENCE_REELS.md) |
+| Brand kit (logo upload) + nearby places + map card on the page | ✅ Built 2026-11-26 (see "Brand & location" below) |
+| Clean-up / improve uploads before use (step 1) | ✅ Built 2026-11-26: safe fixes + before/after + approve on the page; AI clutter removal not yet |
+| Reference-style finishing (speech-synced subtitles, one grade, map card, logo) | ⏳ Not started (section 10, step 2) |
 | Background music | ❌ Blocked (no free generator produced audio) |
 | Automated in the app (API, no manual website steps) | ❌ Not yet: every AI shot today is made by hand on a website |
 
@@ -346,9 +375,46 @@ Data to store per reel: template, shots (source asset or AI job), provider + mod
 
 ## 10. Plan: what's next, in order
 
-Steps 1–5 can run on **free tiers and websites** (via the Chrome extension, as in the POC). Money is spent only in step 6, after we know which tools are worth it.
+### Progress (2026-11-26)
 
-### Step 1: Clean every creative before it's used
+| Done | Where |
+|---|---|
+| Creative Lab page: brief → facts, uploads → Gemini knowledge cards | Backend + frontend, branch `feature/creative-lab-poc-lakshay` |
+| Reels: villa Hindi/Punjabi (real footage), E (real + AI twilight), F (AI Sardar ji intro + real + lux captions) | `poc-output/`, scripts in `poc/creative-lab/` |
+| 4 reels published to Cloudinary, shown under "4. Generated results" | `npm run creative-lab:publish`, `poc/creative-lab/results.json` |
+| 5 reference reels studied; style guide written | [`REFERENCE_REELS.md`](REFERENCE_REELS.md) |
+
+**What the reference study changed:** our reels are accurate but don't look finished. The gap is mostly **editing and text**, not AI generation: speech-synced subtitles with one gold key word, two fonts only, one colour grade, a location map card, logo in and out, clean transitions, presenter on site. Most of that is ffmpeg/ASS work on footage we already have, so it comes right after clean-up (**step 2**). Clean-up stays **step 1**: every later step (reel G, AI shots, posts) should use cleaned, improved files, never the raw uploads.
+
+### Order (updated 2026-11-26)
+
+| # | Step | Needs | Cost |
+|---|---|---|---|
+| 1 | **Clean / improve every uploaded creative before use** | Gemini analysis (already there), ffmpeg/sharp, upscaler, Nano Banana for inpaint | Free (Colab) / Gemini |
+| 2 | Reference-style finishing → rebuild reel F as **reel G** from cleaned files | Cleaned files + voices, Whisper (local), fonts, logo, map facts | Free |
+| 3 | One voice for Sardar ji, in 3–4 settings | Veo daily limit (Gemini app) | Free |
+| 4 | Image first, then video, for AI shots | Nano Banana + Veo | Free (limits) |
+| 5 | 3 formats end to end (walkthrough, update, teaser) | Steps 1–4 | Free |
+| 6 | Free testing round, record cost per shot | Sheet | Free |
+| 7 | Buy tools, build the API flow | Budget | Paid |
+
+Steps 1–6 can run on **free tiers and websites** (via the Chrome extension, as in the POC). Money is spent only in step 7, after we know which tools are worth it.
+
+### Step 1: Clean every creative before it's used — BUILT 2026-11-26 (safe fixes)
+
+**What exists now** (file detail on the Creative Lab page → "Clean-up (step 1)"; code `src/modules/creativelab/cleanup.ts` + `service.ts` `startCleanup/cleanOne`):
+1. **AI check (1 Gemini text request, stored as `asset.fixPlan`)**: orientation (upright / upside down / quarter turn), tilt, converging verticals (camera up/down), exposure, colour cast, noise, blur, temporary clutter. Prompt `buildFixPlanPrompt` in `knowledge.ts`. Videos send 3 frames from the useful part.
+2. **Tilt is measured without AI** (`measureTilt`: Sobel edges, dominant angle within ±12° of vertical, confidence). Used when confidence ≥ 0.2; otherwise no straightening (no guessing). Gardens / wide-angle streets correctly get low confidence.
+3. **Fixes** (`buildCleanFilters`, updated 2026-11-26 after "still not clear enough"): videos are trimmed to the kept shots → stronger 2-pass stabilisation (vidstab shakiness 8, smoothing 35: gimbal-like) → **deflicker** (auto-exposure pumping) → turn upright → straighten (rotate + minimal zoom) → perspective fix → light/colour → **Real-ESRGAN AI upscale** → resize to long side 1920 + light sharpen. Nothing changes the layout of the property.
+   - **Real-ESRGAN** (free, open source, runs locally on the Mac GPU via Vulkan/Metal) restores detail and removes WhatsApp compression blocks and grain; it does not add or remove objects. Photos: `realesrgan-x4plus` ×4 (~35 s per photo). Videos: `realesr-animevideov3` ×2 on every frame (~0.5 s per frame, so a 20 s clip ≈ 5–6 min; runs in the background queue). The original sound is kept.
+   - **Setup (each machine):** download `realesrgan-ncnn-vulkan-20220424-macos.zip` from the official releases page (github.com/xinntao/Real-ESRGAN/releases, v0.2.5.0, 52 MB), unzip into `realestate/tools/realesrgan/` (next to the two repos, not in git), `chmod +x realesrgan-ncnn-vulkan`. Or set `REALESRGAN_PATH`. Linux/Windows builds exist on the same page. Without it, clean-up falls back to plain ffmpeg (bigger, not sharper).
+4. Result stored as `asset.cleaned` (Cloudinary `creative-lab/cleaned/`), page shows **before / after**, list of fixes, the AI notes and any clutter; **Approve** / **Reject** / Undo. An "Orientation" selector overrides the AI (found a WhatsApp clip filmed upside down).
+5. If Gemini is busy or out of free requests (20/day per model on the free tier), clean-up still runs: measured straightening + basic fixes, with a note to "Clean again" later.
+- API: `POST /admin/creative-lab/assets/:id/clean` `{ replan?, orientation? }` (202, queued, one at a time), `POST /assets/:id/cleaned/status` `{ APPROVED|REJECTED|READY }`.
+- Tested on 3 samples (tilted photo, wide-angle street, upside-down shaky video). Tests: `tests/creativelab_cleanup.test.ts`.
+- **Not yet:** AI clutter removal (1c below), using `cleaned.url` in reel building (step 2 should use approved cleaned files), a "clean all" button.
+
+The original plan for this step follows.
 Today the analysis only *describes* problems. Next, it should **fix them before any reel or post uses the file**.
 
 1. **Analysis lists fixable issues** per photo and per video shot (the knowledge card already has `qualityIssues`). Add where each one is and how bad it is: blur / out of focus, noise or WhatsApp compression, too dark / bright, tilted horizon, shake, colour cast, clutter (bags, tools, wires), unpainted or unfinished patches, glare.
@@ -368,39 +434,68 @@ Today the analysis only *describes* problems. Next, it should **fix them before 
    - **Not OK without a visible "virtually enhanced" label:** anything that changes the **actual state of the property**, such as painting an unpainted wall, finishing unfinished work, or adding furniture or greenery. Buyers will visit, so a cleaned photo must still match what they'll see.
 5. Video: run the same checks per shot (from the knowledge card's shot list), clean only the shots we plan to use, and re-check frames after cleaning.
 
-### Step 2: Image first, then video
+### Brand & location card (built 2026-11-26)
+On each test project (left column, under the facts):
+- **Logo / icon upload** (PNG/JPG/WebP, ≤ 8 MB; SVG not accepted for security) → `project.brand`, file in Cloudinary `creative-lab/brand/`.
+- **Nearby places** (up to 8): name + time (min/hr) and/or distance (km/m) + optional direction (N…NW, north up) → `project.places`. Only what is typed is ever shown.
+- **Map card** (`project.mapCards`, history, latest first), style **Flat** or **3D** (4 looks each; each Regenerate uses the next look):
+  - **Generate (free)**, default: Cloudflare Workers AI (`@cf/black-forest-labs/flux-1-schnell`, free daily allowance) draws only the background scene with no text; `src/modules/creativelab/mapCardRender.ts` then draws the pin, project name, labels with chips, connector lines, north arrow (if directions), "Not to scale" and the logo with sharp/SVG. **Text is always exact.** Needs `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (Workers AI permission) in the backend `.env`.
+  - **Gemini (paid)**: Gemini image model draws the whole card from `buildMapCardPrompt` (logo attached). Looks more integrated but may misspell, so check. Our Gemini keys have no free image quota (403 / limit 0): needs billing.
+  - **Show prompt / Upload image I made**: make the card on the Gemini website (free, manual) and attach it. Done once via the Chrome extension on 2026-11-26 (3D look, all text correct, Gemini ✦ mark in a corner).
+  - Every card starts **Needs check**; Approve needs the "names and numbers are correct" tick.
+- API: `PUT/DELETE /admin/creative-lab/projects/:id/logo`, `PUT .../places`, `GET .../map-card/prompt?style=`, `POST .../map-cards` `{ style: flat|3d, engine: free|gemini }`, `POST .../map-cards/upload`, `POST .../map-cards/:cardId/status`.
+
+### Step 2: Reference-style finishing (reel G)
+Goal: the same TDI villa content, but looking like reference R5/R1 in [`REFERENCE_REELS.md`](REFERENCE_REELS.md) (Part C is the checklist).
+1. **Word timings:** run Whisper (word timestamps, free, local) on the Punjabi/Hindi voice tracks → `data/words_*.json`. Fallback: Sarvam text + even spacing per shot.
+2. **"Subtitles" caption style** in `caption_styles.py`: white bold sans, words build up as spoken (max 3 lines), **one key word per phrase in gold serif italic** on its own line (Playfair Display, OFL licence), next phrase ghosts in; text never over a face (bottom-middle over the presenter, top over busy shots); soft dark gradient at the bottom instead of a box.
+3. **Headline + pill style** for fact screens ("5.37 Acres"-type): serif headline + white rounded pill(s), rise-in, bloom-out.
+4. **One grade** on every shot (same LUT + vignette), so phone footage and Veo clips match.
+5. **Location map card:** a designed graphic (like reference R5), not a satellite photo or Google Map: the project pin in the middle, nearby places around it as labels with distance chips ("Airport · 15 min"), an animated line. Input = a list of places + distances from the builder/brief (no coordinates needed). Optional: the site's Google Maps link / lat-long, only to put places in the right direction; without it the layout is schematic and marked "not to scale". If there are no facts, skip the card.
+6a. **Brand assets and places come from the page** ("Brand & location" card, built 2026-11-26): see below.
+6. **Brand:** small logo in a corner throughout; project logo whip-in at the start and end card at the end (logo from the uploads).
+7. **Transitions:** white flash, light leak, motion-blur whip only.
+8. Use the **cleaned** files from step 1. Publish reel G next to F on the Creative Lab page (`results.json`) and compare.
+
+Done when reel G passes the Part C checklist and stays facts-only and labelled.
+
+### Step 3: One voice for Sardar ji (in 3–4 settings)
+- **3a (free, now):** Veo clips 2 and 3 (features; price + call to action), so the whole reel is in his own Veo voice. Prompts are ready in section 8.3.
+- **3b (scalable):** test voice conversion on Colab. Sarvam speaks the correct Punjabi words, then the audio is converted to Sardar ji's voice using his clip-1 audio as the sample. Compare it with 3a by ear. If it's good, any line in any project can use his voice without Veo limits.
+- Keep the **same presenter image** for every project, so he becomes a recognisable "RealCRM presenter".
+- New from the references: the presenter should appear **through the whole reel in 3–4 settings** (R1, R5), not only in the intro. Make 3–4 key images of him (Nano Banana: garden, entrance, terrace, inside) → one Veo clip each, all in his own voice.
+- For "project update" reels (reference R2) a **real person on site** works better than an AI presenter.
+
+### Step 4: Image first, then video
 Veo does much better when it starts from a strong image, as we saw with the presenter and twilight shots. So every AI shot becomes two steps:
 1. **Make the key image:** the cleaned real photo/frame → Gemini image edit (light change, presenter added, twilight sky…) → **admin approves the image**. This step is cheap, so it's easy to retry.
 2. **Animate it:** the approved image → Veo (or Kling/MiniMax) image-to-video → check the building is unchanged → use.
 
 This catches bad results at the cheap image stage instead of after a slow, limited video generation.
 
-### Step 3: One voice for Sardar ji
-- **3a (free, now):** Veo clips 2 and 3 (features; price + call to action), so the whole reel is in his own Veo voice. Prompts are ready in section 8.3.
-- **3b (scalable):** test voice conversion on Colab. Sarvam speaks the correct Punjabi words, then the audio is converted to Sardar ji's voice using his clip-1 audio as the sample. Compare it with 3a by ear. If it's good, any line in any project can use his voice without Veo limits.
-- Keep the **same presenter image** for every project, so he becomes a recognisable "RealCRM presenter".
-
-### Step 4: Finish 2–3 strong ideas end to end
-Pick from the idea library ideas that work with what builders actually upload:
+### Step 5: Finish 3 formats end to end
+Pick from the idea library ideas that work with what builders actually upload. Target: **A (presenter walkthrough, R5 style), D or E, plus C**:
 
 | Idea | Made from | Status |
 |---|---|---|
-| **A. Punjabi presenter walkthrough** | Presenter image + Veo talking clips + real shots | Intro done; needs clips 2–3 / voice (step 3) |
+| **A. Punjabi presenter walkthrough** | Presenter image + Veo talking clips + real shots | Intro done; needs step 2 finishing + step 3 voice |
 | **B. Golden hour → twilight transformation** | Cleaned exterior photo → image (twilight) → Veo or MiniMax start/end frame | Twilight clip done; needs the image-first version + its own reel |
 | **C. Cinematic real-footage tour** | Cleaned real shots + lux captions + voice + music | Reels done; needs step 1 clean-up + music |
+| **D. Project update / "big news"** (reference R2) | Real site + drone footage, presenter on site, 2–3 headline words | New; needs real on-site footage |
+| **E. Milestone teaser, no presenter** (reference R3) | Title slams, gold numbers, AI aerial with glowing plot outline, logo end card | New; cheap, good first test of the brand look |
 
 Later, once builders upload the right material: drone reveal (needs real drone footage, or a clearly labelled AI shot) and construction timelapse (needs dated construction photos).
 
 Each idea is "done" when it's a 30–45 s reel that is accurate (facts from the brief), labelled, and good enough to post.
 
-### Step 5: Free testing round, then compare
+### Step 6: Free testing round, then compare
 - Make the 2–3 reels using the free tiers we have: Gemini app (Veo, daily limit), Kling (66 credits/day), Hailuo (80 credits), Colab (free GPU), Sarvam.
 - Spread the work over a few days to stay inside each tool's daily free limit.
 - **Use legitimate accounts only.** Creating extra email accounts to get more free credits usually breaks the providers' terms and can get accounts banned. Use real team members' own accounts, or the small trial credits some providers offer.
 - For every shot, record the tool, credits/cost, time taken, number of retries, and whether the building stayed correct. A simple sheet is enough.
 
-### Step 6: Decide what to buy, then test properly with APIs
-1. From the step 5 sheet, pick **1 main video tool + 1 backup, 1 image tool, 1 voice tool** (and music).
+### Step 7: Decide what to buy, then test properly with APIs
+1. From the step 6 sheet, pick **1 main video tool + 1 backup, 1 image tool, 1 voice tool** (and music).
 2. Buy the smallest paid plan or API credits for those only.
 3. Build the API flow from section 9 behind the Creative Lab page: `POST /projects/:id/reels` → jobs → draft reel for review.
 4. Re-make the same 2–3 reels through the API and compare them with the website versions. Measure **cost per reel** against the monthly target (4–5 reels + 6–7 posts per project).

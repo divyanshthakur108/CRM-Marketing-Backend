@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
-import type { ImageKnowledge, ProjectBrief, VideoKnowledge } from './knowledge.js';
+import type { FixPlan, ImageKnowledge, NearbyPlace, ProjectBrief, VideoKnowledge } from './knowledge.js';
 
 /**
  * Creative Lab (admin POC): a test project described in plain text, plus the photos and videos
@@ -26,8 +26,29 @@ export interface ICreativeLabProject extends Document {
   /** Facts the AI pulled out of infoText (only what was written) */
   brief?: ProjectBrief;
   briefError?: string;
+  /** Project logo / icon uploaded on the page (used on map cards and reels) */
+  brand?: { logoKey: string; logoUrl: string; logoThumb?: string; filename: string; mimeType: string; updatedAt: Date };
+  /** Nearby places typed on the page: name + time and/or distance, exactly as given */
+  places?: NearbyPlace[];
+  /** Map cards made from `places` (latest first). AI images must be checked before use. */
+  mapCards?: Types.DocumentArray<IMapCard>;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export type MapCardStatus = 'NEEDS_CHECK' | 'APPROVED' | 'REJECTED';
+
+export interface IMapCard {
+  _id: Types.ObjectId;
+  key: string;
+  url: string;
+  prompt: string;
+  variant: number;
+  style?: 'flat' | '3d';
+  source: 'gemini' | 'cloudflare' | 'upload';
+  model?: string;
+  status: MapCardStatus;
+  createdAt: Date;
 }
 
 export interface AnalysisStep {
@@ -61,8 +82,30 @@ export interface ICreativeLabAsset extends Document {
   analysisMs?: number;
   startedAt?: Date;
   finishedAt?: Date;
+  /** What a photo editor would fix (Gemini, 1 request) */
+  fixPlan?: FixPlan;
+  /** Cleaned copy (stabilised / straightened / light / sharpened / upscaled). Used by later steps once APPROVED. */
+  cleaned?: CleanedVersion;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export type CleanStatus = 'QUEUED' | 'WORKING' | 'READY' | 'FAILED' | 'APPROVED' | 'REJECTED';
+
+export interface CleanedVersion {
+  status: CleanStatus;
+  key?: string;
+  url?: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  previewThumb?: string;
+  fixes?: string[];
+  /** Orientation picked by hand on the page (beats the AI's answer) */
+  orientationOverride?: 'ok' | 'upside_down' | 'turn_left' | 'turn_right';
+  error?: string;
+  ms?: number;
+  updatedAt?: Date;
 }
 
 const projectSchema = new Schema<ICreativeLabProject>(
@@ -73,6 +116,43 @@ const projectSchema = new Schema<ICreativeLabProject>(
     briefStatus: { type: String, enum: ['PENDING', 'DONE', 'FAILED'], default: 'PENDING' },
     brief: { type: Schema.Types.Mixed },
     briefError: String,
+    brand: {
+      type: new Schema(
+        { logoKey: String, logoUrl: String, logoThumb: String, filename: String, mimeType: String, updatedAt: Date },
+        { _id: false }
+      ),
+      default: undefined,
+    },
+    places: {
+      type: [
+        new Schema(
+          {
+            name: { type: String, required: true },
+            direction: { type: String, enum: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] },
+            time: { type: new Schema({ value: Number, unit: { type: String, enum: ['min', 'hr'] } }, { _id: false }), default: undefined },
+            distance: { type: new Schema({ value: Number, unit: { type: String, enum: ['km', 'm'] } }, { _id: false }), default: undefined },
+          },
+          { _id: false }
+        ),
+      ],
+      default: undefined,
+    },
+    mapCards: {
+      type: [
+        new Schema<IMapCard>({
+          key: { type: String, required: true },
+          url: { type: String, required: true },
+          prompt: { type: String, default: '' },
+          variant: { type: Number, default: 0 },
+          style: { type: String, enum: ['flat', '3d'], default: 'flat' },
+          source: { type: String, enum: ['gemini', 'cloudflare', 'upload'], required: true },
+          model: String,
+          status: { type: String, enum: ['NEEDS_CHECK', 'APPROVED', 'REJECTED'], default: 'NEEDS_CHECK' },
+          createdAt: { type: Date, default: Date.now },
+        }),
+      ],
+      default: undefined,
+    },
   },
   { timestamps: true }
 );
@@ -108,6 +188,8 @@ const assetSchema = new Schema<ICreativeLabAsset>(
     analysisMs: Number,
     startedAt: Date,
     finishedAt: Date,
+    fixPlan: { type: Schema.Types.Mixed },
+    cleaned: { type: Schema.Types.Mixed },
   },
   { timestamps: true }
 );

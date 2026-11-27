@@ -129,3 +129,86 @@ describe('Creative Lab knowledge cards', () => {
     expect(videoPrompt).toContain('Transcript');
   });
 });
+
+describe('nearby places + map card prompt', () => {
+  it('keeps valid rows and rejects rows without time or distance', async () => {
+    const { cleanPlaces } = await import('../src/modules/creativelab/knowledge.js');
+    const places = cleanPlaces([
+      { name: '  Mohali   Airport ', time: { value: '15', unit: 'min' }, distance: { value: 12, unit: 'km' } },
+      { name: 'PGI', time: { value: 1.5, unit: 'hr' } },
+      { name: 'Quark City', distance: { value: 800, unit: 'm' } },
+    ]);
+    expect(places).toEqual([
+      { name: 'Mohali Airport', time: { value: 15, unit: 'min' }, distance: { value: 12, unit: 'km' } },
+      { name: 'PGI', time: { value: 1.5, unit: 'hr' } },
+      { name: 'Quark City', distance: { value: 800, unit: 'm' } },
+    ]);
+    expect(() => cleanPlaces([{ name: 'Mall' }])).toThrow(/add a time or a distance/);
+    expect(() => cleanPlaces([{ name: '', time: { value: 5, unit: 'min' } }])).toThrow(/name is required/);
+    expect(() => cleanPlaces(Array.from({ length: 9 }, () => ({ name: 'x', time: { value: 1 } })))).toThrow(/Up to 8/);
+  });
+
+  it('puts every place and number in the prompt exactly, and the variant changes the style', async () => {
+    const { buildMapCardPrompt, formatPlaceChip } = await import('../src/modules/creativelab/knowledge.js');
+    const places = [
+      { name: 'Mohali Airport', time: { value: 15, unit: 'min' as const }, distance: { value: 12, unit: 'km' as const } },
+      { name: 'PGI', time: { value: 1, unit: 'hr' as const } },
+    ];
+    expect(formatPlaceChip(places[0])).toBe('15 min · 12 km');
+    expect(formatPlaceChip(places[1])).toBe('1 hr');
+    const a = buildMapCardPrompt({ projectName: 'TDI Wellington Heights 2', locality: 'Sector 117, Mohali', places, hasLogo: true, variant: 0 });
+    expect(a).toContain('"Mohali Airport" with the chip "15 min · 12 km"');
+    expect(a).toContain('"PGI" with the chip "1 hr"');
+    expect(a).toContain('Not to scale');
+    expect(a).toContain('attached logo');
+    const b = buildMapCardPrompt({ projectName: 'TDI Wellington Heights 2', places, hasLogo: false, variant: 1 });
+    expect(b).not.toEqual(a);
+    expect(b).toContain('No logo');
+  });
+});
+
+describe('map card directions and 3D style', () => {
+  it('keeps a valid direction, drops a bad one, and puts it in the prompt', async () => {
+    const { cleanPlaces, buildMapCardPrompt } = await import('../src/modules/creativelab/knowledge.js');
+    const places = cleanPlaces([
+      { name: 'Mohali Airport', direction: 'NE', time: { value: 10, unit: 'min' } },
+      { name: 'Bus Stand', direction: 'UP', distance: { value: 2, unit: 'km' } },
+    ]);
+    expect(places[0].direction).toBe('NE');
+    expect(places[1].direction).toBeUndefined();
+    const p = buildMapCardPrompt({ projectName: 'X', places, hasLogo: false, style: '3d' });
+    expect(p).toContain('north-east');
+    expect(p).toContain('North is up');
+    expect(p).toContain('3D ');
+    expect(buildMapCardPrompt({ projectName: 'X', places: [places[1]], hasLogo: false })).toContain('do not add a compass');
+  });
+});
+
+describe('free map card (background + our own text)', () => {
+  it('lays out places by direction, then fills free slots without overlap', async () => {
+    const { layoutPlaces } = await import('../src/modules/creativelab/mapCardRender.js');
+    const out = layoutPlaces([
+      { name: 'A', direction: 'NE', time: { value: 1, unit: 'min' } },
+      { name: 'B', time: { value: 2, unit: 'min' } },
+      { name: 'C', direction: 'NE', time: { value: 3, unit: 'min' } },
+    ]);
+    expect(out.map((o) => o.slot)).toEqual(['NE', 'NW', 'SW']);
+    expect(new Set(out.map((o) => o.slot)).size).toBe(3);
+  });
+
+  it('draws every name and chip exactly (escaped) and renders a 1080x1920 PNG', async () => {
+    const { buildOverlaySvg, renderMapCard } = await import('../src/modules/creativelab/mapCardRender.js');
+    const { buildMapScenePrompt } = await import('../src/modules/creativelab/knowledge.js');
+    const places = [{ name: 'Mall & Co <1>', time: { value: 15, unit: 'min' as const }, distance: { value: 12, unit: 'km' as const } }];
+    const svg = buildOverlaySvg({ projectName: 'Green Heights', locality: 'Sector 82, Mohali', places, hasLogo: false });
+    expect(svg).toContain('Mall &amp; Co &lt;1&gt;');
+    expect(svg).toContain('15 min · 12 km');
+    expect(svg).toContain('Not to scale');
+    expect(buildMapScenePrompt('3d', 0)).toMatch(/no text/);
+    const sharp = (await import('sharp')).default;
+    const bg = await sharp({ create: { width: 256, height: 256, channels: 3, background: '#e8d5b0' } }).jpeg().toBuffer();
+    const png = await renderMapCard({ background: bg, projectName: 'Green Heights', places });
+    const meta = await sharp(png).metadata();
+    expect([meta.width, meta.height]).toEqual([1080, 1920]);
+  });
+});

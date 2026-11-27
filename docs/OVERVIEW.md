@@ -18,7 +18,9 @@ realestate/
 | `VIDEO_PIPELINE_PLAN.md` | Next steps for video, step by step, with tech/APIs and flow charts |
 | `AI_GENERATION_RESEARCH.md` | Product flow, AI providers, prices, open questions |
 | `IDEA_LIBRARY.md` | The content ideas (reels and posts) the planner picks from, what each needs and how it's made |
-| `CREATIVE_LAB_POC.md` | Creative Lab POC: what was built, AI tools tried, reels made, open problems |
+| `CREATIVE_LAB_HANDOVER.md` | **Creative Lab start here**: setup, what's built, clean-up process, map cards, AI used where, rules, plan, API |
+| `CREATIVE_LAB_POC.md` | Creative Lab POC: what was built, AI tools tried, reels made, open problems, progress and plan (start here) |
+| `REFERENCE_REELS.md` | 5 reference reels (GDPL, Mohali): shot-by-shot notes, caption animations, style guide for the finished look |
 
 ---
 

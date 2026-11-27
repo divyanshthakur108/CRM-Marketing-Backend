@@ -15,7 +15,8 @@
     "seed:admin": "tsx src/scripts/seedAdmin.ts",
     "worker": "tsx src/worker.ts",
     "e2e:server": "tsx src/scripts/e2eServer.ts",
-    "creative-lab:publish": "tsx src/scripts/publishCreativeLabResults.ts"
+    "creative-lab:publish": "tsx src/scripts/publishCreativeLabResults.ts",
+    "setup:realesrgan": "bash scripts/setup-realesrgan.sh"
   },
   "keywords": [
     "real-estate",

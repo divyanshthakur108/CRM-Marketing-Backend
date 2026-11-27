@@ -10,6 +10,7 @@ import { env } from '../../config/env.js';
 import { getTodayGeminiUsage } from '../videolab/cacheModel.js';
 import { creativeLabService } from './service.js';
 import { IDEA_TAGS } from './knowledge.js';
+import { checkSetup } from './cleanup.js';
 
 /**
  * Admin Creative Lab (POC): type a test project's details, upload its photos and videos,
@@ -57,6 +58,14 @@ router.get(
   '/usage',
   asyncHandler(async (_req: Request, res: Response) => {
     sendSuccess(res, await getTodayGeminiUsage());
+  })
+);
+
+/** What this machine has installed / configured for Creative Lab (shown as a checklist on the page) */
+router.get(
+  '/setup',
+  asyncHandler(async (_req: Request, res: Response) => {
+    sendSuccess(res, await checkSetup(env));
   })
 );
 
@@ -127,11 +136,113 @@ router.post(
   })
 );
 
+/** Step 1 clean-up: fix plan (1 Gemini request, reused) + safe ffmpeg fixes. body { replan?: true, orientation?: ok|upside_down|turn_left|turn_right } */
+router.post(
+  '/assets/:assetId/clean',
+  asyncHandler(async (req: Request, res: Response) => {
+    const o = req.body?.orientation;
+    const orientation = ['ok', 'upside_down', 'turn_left', 'turn_right'].includes(o) ? o : undefined;
+    sendSuccess(res, await creativeLabService.startCleanup(req.params.assetId, req.body?.replan === true, orientation), 202);
+  })
+);
+
+const cleanedStatusSchema = z.object({ status: z.enum(['APPROVED', 'REJECTED', 'READY']) });
+router.post(
+  '/assets/:assetId/cleaned/status',
+  validate({ body: cleanedStatusSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { status } = req.body as z.infer<typeof cleanedStatusSchema>;
+    sendSuccess(res, await creativeLabService.setCleanedStatus(req.params.assetId, status));
+  })
+);
+
 router.delete(
   '/assets/:assetId',
   asyncHandler(async (req: Request, res: Response) => {
     await creativeLabService.deleteAsset(req.params.assetId);
     sendSuccess(res, { deleted: true });
+  })
+);
+
+// ── Brand kit, nearby places, map card ─────────────────────────────────────
+
+const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (IMAGE_MIME.has(file.mimetype.toLowerCase())) cb(null, true);
+    else cb(AppError.badRequest('Use a PNG, JPG or WebP image'));
+  },
+});
+const mapStyle = (v: unknown): 'flat' | '3d' => (v === '3d' ? '3d' : 'flat');
+const handleImageUpload = (req: Request, res: Response, next: NextFunction) => {
+  imageUpload.single('file')(req, res, (err: unknown) => {
+    if (err instanceof MulterError) {
+      return next(AppError.badRequest(err.code === 'LIMIT_FILE_SIZE' ? 'Image is larger than 8MB' : `Upload error: ${err.message}`));
+    }
+    next(err);
+  });
+};
+
+router.put(
+  '/projects/:id/logo',
+  handleImageUpload,
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.file) throw AppError.badRequest('No file uploaded (field name: file)');
+    sendSuccess(res, await creativeLabService.setLogo(req.params.id, req.file));
+  })
+);
+
+router.delete(
+  '/projects/:id/logo',
+  asyncHandler(async (req: Request, res: Response) => {
+    sendSuccess(res, await creativeLabService.removeLogo(req.params.id));
+  })
+);
+
+/** Nearby places: [{ name, time?: { value, unit: min|hr }, distance?: { value, unit: km|m } }] */
+router.put(
+  '/projects/:id/places',
+  asyncHandler(async (req: Request, res: Response) => {
+    sendSuccess(res, await creativeLabService.setPlaces(req.params.id, req.body?.places));
+  })
+);
+
+router.get(
+  '/projects/:id/map-card/prompt',
+  asyncHandler(async (req: Request, res: Response) => {
+    const v = req.query.variant !== undefined ? Number(req.query.variant) : undefined;
+    sendSuccess(res, await creativeLabService.getMapCardPrompt(req.params.id, Number.isFinite(v) ? v : undefined, mapStyle(req.query.style)));
+  })
+);
+
+/** Makes a new map card. engine "free" (default): Cloudflare background + exact text drawn by us; "gemini": Gemini draws everything (paid). Calling again = regenerate */
+router.post(
+  '/projects/:id/map-cards',
+  asyncHandler(async (req: Request, res: Response) => {
+    const engine = req.body?.engine === 'gemini' ? 'gemini' : 'free';
+    sendSuccess(res, await creativeLabService.generateMapCard(req.params.id, mapStyle(req.body?.style), engine), 201);
+  })
+);
+
+/** Adds a map card made elsewhere (e.g. on the Gemini website with the copied prompt) */
+router.post(
+  '/projects/:id/map-cards/upload',
+  handleImageUpload,
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.file) throw AppError.badRequest('No file uploaded (field name: file)');
+    sendSuccess(res, await creativeLabService.uploadMapCard(req.params.id, req.file, mapStyle(req.body?.style)), 201);
+  })
+);
+
+const mapStatusSchema = z.object({ status: z.enum(['NEEDS_CHECK', 'APPROVED', 'REJECTED']) });
+router.post(
+  '/projects/:id/map-cards/:cardId/status',
+  validate({ body: mapStatusSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { status } = req.body as z.infer<typeof mapStatusSchema>;
+    sendSuccess(res, await creativeLabService.setMapCardStatus(req.params.id, req.params.cardId, status));
   })
 );
 
